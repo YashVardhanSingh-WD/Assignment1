@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+
+{% block title %}Worker Access | {{ app_name }}{% endblock %}
+
+{% block content %}
+<section class="section">
+    <div class="section-heading">
+        <p class="eyebrow">Worker access</p>
+        <h2>Workers can register here, but they can only start after owner approval.</h2>
+    </div>
+
+    <div class="split auth-split">
+        <div class="panel auth-panel wide">
+            <p class="panel-label">Existing worker login</p>
+            <h1>Login</h1>
+            <p>Use this only if your registration has already been approved by the owner.</p>
+
+            <form method="post" class="stack">
+                <label class="field">
+                    <span>Username</span>
+                    <input type="text" name="username" placeholder="neha.writer" required>
+                </label>
+                <label class="field">
+                    <span>Password</span>
+                    <input type="password" name="password" placeholder="••••••••" required>
+                </label>
+                <button class="button primary" type="submit">Login to worker dashboard</button>
+            </form>
+
+            <div class="demo-credentials">
+                <strong>Demo worker</strong>
+                <p><code>{{ worker_demo_username }}</code> / <code>{{ worker_demo_password }}</code></p>
+            </div>
+        </div>
+
+        <div class="panel auth-panel wide">
+            <p class="panel-label">New worker registration</p>
+            <h1>Register</h1>
+            <p>After you register, the owner reviews your details. You can log in only after approval.</p>
+
+            <form method="post" action="{{ url_for('worker_register') }}" class="stack">
+                <label class="field">
+                    <span>Full name</span>
+                    <input type="text" name="full_name" placeholder="Neha Sharma" required>
+                </label>
+                <label class="field">
+                    <span>Username</span>
+                    <input type="text" name="username" placeholder="neha.writer" required>
+                </label>
+                <label class="field">
+                    <span>WhatsApp number</span>
+                    <input type="tel" name="whatsapp" placeholder="+91 98765 43210" required>
+                </label>
+                <label class="field">
+                    <span>What work can you do?</span>
+                    <textarea name="expertise" rows="3" placeholder="Example: PPT, Word files, handwritten notes, business reports" required></textarea>
+                </label>
+                <label class="field">
+                    <span>Payout method</span>
+                    <select name="payout_method" required>
+                        <option value="">Choose one</option>
+                        <option value="UPI">UPI</option>
+                        <option value="Bank Transfer">Bank Transfer</option>
+                    </select>
+                </label>
+                <label class="field">
+                    <span>Payout details</span>
+                    <input type="text" name="payout_target" placeholder="yourupi@bank or bank account details" required>
+                </label>
+                <label class="field">
+                    <span>Password</span>
+                    <input type="password" name="password" placeholder="Create a password" required>
+                </label>
+                <button class="button primary" type="submit">Submit for approval</button>
+            </form>
+        </div>
+    </div>
+</section>
+{% endblock %}
