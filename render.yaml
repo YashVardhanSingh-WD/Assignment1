@@ -17,6 +17,10 @@ services:
         value: owner
       - key: OWNER_PASSWORD
         sync: false
+      - key: SHOW_DEMO_CREDENTIALS
+        value: "false"
+      - key: SEED_DEMO_DATA
+        value: "false"
     disks:
       - name: assignment-web-data
         mountPath: /var/data
