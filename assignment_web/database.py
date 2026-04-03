@@ -13,6 +13,9 @@ CREATE TABLE IF NOT EXISTS students (
     full_name TEXT NOT NULL,
     email TEXT NOT NULL UNIQUE,
     whatsapp TEXT NOT NULL,
+    is_blocked INTEGER NOT NULL DEFAULT 0,
+    blocked_at TEXT,
+    blocked_reason TEXT,
     created_at TEXT NOT NULL
 );
 
@@ -20,6 +23,7 @@ CREATE TABLE IF NOT EXISTS workers (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     full_name TEXT NOT NULL,
     username TEXT NOT NULL UNIQUE,
+    email TEXT,
     password_hash TEXT NOT NULL,
     whatsapp TEXT NOT NULL,
     expertise TEXT NOT NULL,
@@ -29,6 +33,7 @@ CREATE TABLE IF NOT EXISTS workers (
     approval_status TEXT NOT NULL DEFAULT 'APPROVED',
     approved_at TEXT,
     approved_by TEXT,
+    removed_at TEXT,
     created_at TEXT NOT NULL
 );
 
@@ -117,6 +122,48 @@ CREATE TABLE IF NOT EXISTS notifications (
     FOREIGN KEY (worker_id) REFERENCES workers(id) ON DELETE CASCADE,
     FOREIGN KEY (assignment_id) REFERENCES assignments(id) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS notification_deliveries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    notification_id INTEGER,
+    audience_type TEXT NOT NULL,
+    channel TEXT NOT NULL,
+    recipient TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    status TEXT NOT NULL,
+    external_reference TEXT,
+    error_message TEXT,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (notification_id) REFERENCES notifications(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    audience_type TEXT NOT NULL,
+    student_id INTEGER,
+    worker_id INTEGER,
+    assignment_id INTEGER,
+    endpoint TEXT NOT NULL UNIQUE,
+    p256dh TEXT NOT NULL,
+    auth TEXT NOT NULL,
+    content_encoding TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
+    FOREIGN KEY (worker_id) REFERENCES workers(id) ON DELETE CASCADE,
+    FOREIGN KEY (assignment_id) REFERENCES assignments(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS password_reset_codes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    worker_id INTEGER NOT NULL,
+    delivery_channel TEXT NOT NULL,
+    code_hash TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    used_at TEXT,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (worker_id) REFERENCES workers(id) ON DELETE CASCADE
+);
 """
 
 
@@ -152,15 +199,27 @@ def init_app(app) -> None:
 
 def migrate_db() -> None:
     db = get_db()
+    student_columns = {row["name"] for row in db.execute("PRAGMA table_info(students)").fetchall()}
     worker_columns = {row["name"] for row in db.execute("PRAGMA table_info(workers)").fetchall()}
     assignment_columns = {row["name"] for row in db.execute("PRAGMA table_info(assignments)").fetchall()}
 
+    if "is_blocked" not in student_columns:
+        db.execute("ALTER TABLE students ADD COLUMN is_blocked INTEGER NOT NULL DEFAULT 0")
+    if "blocked_at" not in student_columns:
+        db.execute("ALTER TABLE students ADD COLUMN blocked_at TEXT")
+    if "blocked_reason" not in student_columns:
+        db.execute("ALTER TABLE students ADD COLUMN blocked_reason TEXT")
+
+    if "email" not in worker_columns:
+        db.execute("ALTER TABLE workers ADD COLUMN email TEXT")
     if "approval_status" not in worker_columns:
         db.execute("ALTER TABLE workers ADD COLUMN approval_status TEXT NOT NULL DEFAULT 'APPROVED'")
     if "approved_at" not in worker_columns:
         db.execute("ALTER TABLE workers ADD COLUMN approved_at TEXT")
     if "approved_by" not in worker_columns:
         db.execute("ALTER TABLE workers ADD COLUMN approved_by TEXT")
+    if "removed_at" not in worker_columns:
+        db.execute("ALTER TABLE workers ADD COLUMN removed_at TEXT")
 
     if "budget_min" not in assignment_columns:
         db.execute("ALTER TABLE assignments ADD COLUMN budget_min REAL")
@@ -183,6 +242,12 @@ def migrate_db() -> None:
         SET approved_at = COALESCE(approved_at, created_at),
             approved_by = COALESCE(approved_by, 'system')
         WHERE approval_status = 'APPROVED'
+        """
+    )
+    db.execute(
+        """
+        UPDATE students
+        SET is_blocked = COALESCE(is_blocked, 0)
         """
     )
     db.execute(
@@ -214,6 +279,7 @@ def seed_demo_data() -> None:
             (
                 "Neha Sharma",
                 "neha.writer",
+                "neha@example.com",
                 hash_password("demo123"),
                 "+919876500001",
                 "Reports, Word files, business case studies",
@@ -227,6 +293,7 @@ def seed_demo_data() -> None:
             (
                 "Aman Verma",
                 "aman.slides",
+                "aman@example.com",
                 hash_password("demo123"),
                 "+919876500002",
                 "Presentations, handwritten notes, design cleanup",
@@ -242,10 +309,10 @@ def seed_demo_data() -> None:
             """
             INSERT INTO workers
                 (
-                    full_name, username, password_hash, whatsapp, expertise, payout_method,
+                    full_name, username, email, password_hash, whatsapp, expertise, payout_method,
                     payout_target, approval_status, approved_at, approved_by, created_at
                 )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             workers,
         )
