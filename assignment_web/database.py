@@ -99,6 +99,24 @@ CREATE TABLE IF NOT EXISTS payouts (
     FOREIGN KEY (assignment_id) REFERENCES assignments(id) ON DELETE CASCADE,
     FOREIGN KEY (worker_id) REFERENCES workers(id)
 );
+
+CREATE TABLE IF NOT EXISTS notifications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    audience_type TEXT NOT NULL,
+    student_id INTEGER,
+    worker_id INTEGER,
+    assignment_id INTEGER,
+    title TEXT NOT NULL,
+    body TEXT NOT NULL,
+    tone TEXT NOT NULL DEFAULT 'muted',
+    action_url TEXT,
+    is_read INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    read_at TEXT,
+    FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
+    FOREIGN KEY (worker_id) REFERENCES workers(id) ON DELETE CASCADE,
+    FOREIGN KEY (assignment_id) REFERENCES assignments(id) ON DELETE CASCADE
+);
 """
 
 
