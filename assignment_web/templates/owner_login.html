@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+
+{% block title %}Owner Login | {{ app_name }}{% endblock %}
+
+{% block content %}
+<section class="center-stage">
+    <div class="panel auth-panel">
+        <p class="eyebrow">Owner approval panel</p>
+        <h1>Owner login</h1>
+        <p>Use this panel to approve or reject new worker registrations.</p>
+
+        <form method="post" class="stack">
+            <label class="field">
+                <span>Username</span>
+                <input type="text" name="username" placeholder="owner" required>
+            </label>
+            <label class="field">
+                <span>Password</span>
+                <input type="password" name="password" placeholder="••••••••" required>
+            </label>
+            <button class="button primary" type="submit">Open owner dashboard</button>
+        </form>
+
+        <div class="demo-credentials">
+            <strong>Demo owner</strong>
+            <p><code>{{ owner_demo_username }}</code> / <code>{{ owner_demo_password }}</code></p>
+        </div>
+    </div>
+</section>
+{% endblock %}
