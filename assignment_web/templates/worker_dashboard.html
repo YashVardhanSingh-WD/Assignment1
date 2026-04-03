@@ -22,34 +22,34 @@
             <strong>{{ stats.earnings|currency_inr }}</strong>
             <span>released payouts</span>
         </article>
+        <article class="stat-card">
+            <strong>{{ worker_unread_notifications }}</strong>
+            <span>new alerts since last visit</span>
+        </article>
     </div>
 </section>
 
 <section class="section split">
     <article class="panel">
-        <p class="panel-label">Available assignments</p>
-        <div class="feed cards-feed">
-            {% for assignment in available_assignments %}
-            <article class="job-card">
-                <div class="job-topline">
-                    <div>
-                        <h3>{{ assignment.title }}</h3>
-                        <p>{{ service_lookup.get(assignment.service_type, assignment.service_type) }} · {{ assignment.page_count }} pages/slides</p>
-                    </div>
-                    <span class="status-chip accent">{{ worker_earning_amount(assignment.final_price, worker_share)|currency_inr }}</span>
+        <div class="panel-header">
+            <div>
+                <p class="panel-label">Notification center</p>
+                <h3>What needs your attention</h3>
+            </div>
+            <span class="status-chip accent">{{ worker_unread_notifications }} new</span>
+        </div>
+        <div class="feed notification-feed">
+            {% for notification in worker_notifications %}
+            <article class="feed-item notification-item">
+                <div class="feed-meta">
+                    <strong>{{ notification.title }}</strong>
+                    <span>{{ notification.created_at|pretty_datetime }}</span>
                 </div>
-                <div class="job-details">
-                    <span>Deadline: {{ assignment.deadline|pretty_datetime }}</span>
-                    <span>Mode: {{ submission_lookup.get(assignment.submission_mode, assignment.submission_mode) }}</span>
-                    <span>Your earning: {{ worker_earning_amount(assignment.final_price, worker_share)|currency_inr }}</span>
-                </div>
-                <p>{{ assignment.requirements }}</p>
-                <form method="post" action="{{ url_for('claim_assignment', assignment_id=assignment.id) }}">
-                    <button class="button primary" type="submit">Claim assignment</button>
-                </form>
+                <p>{{ notification.body }}</p>
+                <span class="status-chip {{ notification.tone }}">{{ notification.tone|title }}</span>
             </article>
             {% else %}
-            <p class="empty-state">No paid assignments are waiting right now.</p>
+            <p class="empty-state">Worker alerts will appear here when a new paid assignment is available, a student sends a message, or a payout changes state.</p>
             {% endfor %}
         </div>
     </article>
@@ -71,6 +71,37 @@
             {% endfor %}
         </div>
     </article>
+</section>
+
+<section class="section">
+    <div class="section-heading">
+        <p class="eyebrow">Available assignments</p>
+        <h2>New paid work ready to claim.</h2>
+    </div>
+    <div class="feed cards-feed">
+        {% for assignment in available_assignments %}
+        <article class="job-card">
+            <div class="job-topline">
+                <div>
+                    <h3>{{ assignment.title }}</h3>
+                    <p>{{ service_lookup.get(assignment.service_type, assignment.service_type) }} · {{ assignment.page_count }} pages/slides</p>
+                </div>
+                <span class="status-chip accent">{{ worker_earning_amount(assignment.final_price, worker_share)|currency_inr }}</span>
+            </div>
+            <div class="job-details">
+                <span>Deadline: {{ assignment.deadline|pretty_datetime }}</span>
+                <span>Mode: {{ submission_lookup.get(assignment.submission_mode, assignment.submission_mode) }}</span>
+                <span>Your earning: {{ worker_earning_amount(assignment.final_price, worker_share)|currency_inr }}</span>
+            </div>
+            <p>{{ assignment.requirements }}</p>
+            <form method="post" action="{{ url_for('claim_assignment', assignment_id=assignment.id) }}">
+                <button class="button primary" type="submit">Claim assignment</button>
+            </form>
+        </article>
+        {% else %}
+        <p class="empty-state">No paid assignments are waiting right now.</p>
+        {% endfor %}
+    </div>
 </section>
 
 <section class="section">
