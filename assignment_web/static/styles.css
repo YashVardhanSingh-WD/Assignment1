@@ -58,6 +58,12 @@ a {
     text-decoration: none;
 }
 
+.text-link {
+    color: var(--accent);
+    display: inline-flex;
+    margin-top: 1rem;
+}
+
 button,
 input,
 select,
