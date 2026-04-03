@@ -1,0 +1,218 @@
+{% extends "base.html" %}
+
+{% block title %}{{ assignment.public_id }} | {{ app_name }}{% endblock %}
+
+{% block content %}
+<section class="order-hero">
+    <div>
+        <p class="eyebrow">Student order workspace</p>
+        <h1>{{ assignment.title }}</h1>
+        <p class="hero-text">Track the assignment, complete payment, review worker messages, and approve the final delivery from one page.</p>
+    </div>
+    <div class="status-chip {{ status_tone(assignment.status) }}">
+        {{ status_labels.get(assignment.status, assignment.status) }}
+    </div>
+</section>
+
+<section class="order-grid">
+    <article class="panel">
+        <p class="panel-label">Order summary</p>
+        <div class="summary-list">
+            <div>
+                <span>Order ID</span>
+                <strong>{{ assignment.public_id }}</strong>
+            </div>
+            <div>
+                <span>Service</span>
+                <strong>{{ service_label }}</strong>
+            </div>
+            <div>
+                <span>Mode</span>
+                <strong>{{ submission_label }}</strong>
+            </div>
+            <div>
+                <span>Deadline</span>
+                <strong>{{ assignment.deadline|pretty_datetime }}</strong>
+            </div>
+            <div>
+                <span>Approx. size</span>
+                <strong>{{ assignment.page_count }} pages/slides</strong>
+            </div>
+            <div>
+                <span>Preferred payment</span>
+                <strong>{{ payment_label }}</strong>
+            </div>
+            <div>
+                <span>Your budget range</span>
+                <strong>{{ assignment.budget_min|currency_inr }} to {{ assignment.budget_max|currency_inr }}</strong>
+            </div>
+        </div>
+    </article>
+
+    <article class="panel">
+        <p class="panel-label">Price and payment</p>
+        <div class="pricing-box">
+            <strong>
+                {% if assignment.final_price %}
+                {{ assignment.final_price|currency_inr }}
+                {% else %}
+                Waiting for final quote
+                {% endif %}
+            </strong>
+            <span>{{ assignment.payment_status }}</span>
+        </div>
+        {% if assignment.final_price %}
+        <p>This is the final agreed amount. Once payment is verified, the assignment becomes available to approved workers.</p>
+        {% else %}
+        <p>Your order is under review. The owner will confirm the final price after checking the workload and your budget range.</p>
+        {% endif %}
+
+        {% if assignment.payment_status != "PAID" and assignment.final_price %}
+        <div class="payment-actions" data-order-id="{{ assignment.public_id }}" data-provider="{{ payment_provider }}">
+            <button class="button primary" type="button" id="pay-now-button">Start payment</button>
+            <button class="button ghost hidden" type="button" id="confirm-demo-button">Confirm demo payment</button>
+            <div class="payment-feedback" id="payment-feedback"></div>
+        </div>
+        {% elif not assignment.final_price %}
+        <p class="inline-note">Payment will unlock after the final amount is confirmed.</p>
+        {% else %}
+        <p class="inline-note success-note">Payment is complete and the order is in the worker queue.</p>
+        {% endif %}
+    </article>
+
+    <article class="panel">
+        <p class="panel-label">Student contact</p>
+        <div class="summary-list">
+            <div>
+                <span>Name</span>
+                <strong>{{ assignment.student_name }}</strong>
+            </div>
+            <div>
+                <span>Email</span>
+                <strong>{{ assignment.email }}</strong>
+            </div>
+            <div>
+                <span>WhatsApp</span>
+                <strong>{{ assignment.whatsapp }}</strong>
+            </div>
+        </div>
+    </article>
+
+    <article class="panel">
+        <p class="panel-label">Delivery details</p>
+        {% if assignment.submission_mode == "HANDWRITTEN" %}
+        <div class="summary-list">
+            <div>
+                <span>Address</span>
+                <strong>{{ assignment.delivery_address }}</strong>
+            </div>
+            <div>
+                <span>Hostel</span>
+                <strong>{{ assignment.hostel_name }}</strong>
+            </div>
+            <div>
+                <span>Room</span>
+                <strong>{{ assignment.room_number }}</strong>
+            </div>
+            <div>
+                <span>Notes</span>
+                <strong>{{ assignment.location_notes or "No extra note provided" }}</strong>
+            </div>
+        </div>
+        {% else %}
+        <p>Online delivery will be coordinated through WhatsApp and email for this order.</p>
+        {% endif %}
+    </article>
+</section>
+
+<section class="section split">
+    <article class="panel">
+        <p class="panel-label">Requirements</p>
+        <p class="rich-text">{{ assignment.requirements }}</p>
+        {% if assignment.worker_name %}
+        <div class="assigned-worker">
+            <span>Assigned worker</span>
+            <strong>{{ assignment.worker_name }}</strong>
+        </div>
+        {% endif %}
+        {% if payout %}
+        <div class="assigned-worker">
+            <span>Payout status</span>
+            <strong>{{ payout.status }}</strong>
+        </div>
+        {% endif %}
+    </article>
+
+    <article class="panel">
+        <p class="panel-label">Approval</p>
+        <p>Approve the finished work here. Approval releases the worker payout.</p>
+        <form method="post" action="{{ url_for('approve_assignment', public_id=assignment.public_id) }}" class="stack">
+            <label class="field">
+                <span>Confirm with your email</span>
+                <input type="email" name="email" placeholder="{{ assignment.email }}" required>
+            </label>
+            <button class="button primary" type="submit" {% if assignment.status != "COMPLETED" %}disabled{% endif %}>
+                Approve completed assignment
+            </button>
+        </form>
+    </article>
+</section>
+
+<section class="section split">
+    <article class="panel">
+        <p class="panel-label">Message thread</p>
+        <form method="post" action="{{ url_for('post_student_message', public_id=assignment.public_id) }}" class="stack">
+            <label class="field">
+                <span>Your name</span>
+                <input type="text" name="sender_name" value="{{ assignment.student_name }}" required>
+            </label>
+            <label class="field">
+                <span>Email verification</span>
+                <input type="email" name="email" placeholder="{{ assignment.email }}" required>
+            </label>
+            <label class="field">
+                <span>Message</span>
+                <textarea name="body" rows="4" placeholder="Ask a question, add a clarification, or confirm delivery preferences." required></textarea>
+            </label>
+            <button class="button ghost" type="submit">Send message</button>
+        </form>
+
+        <div class="feed">
+            {% for message in messages %}
+            <article class="feed-item">
+                <div class="feed-meta">
+                    <strong>{{ message.sender_name }}</strong>
+                    <span>{{ message.sender_role|title }} · {{ message.created_at|pretty_datetime }}</span>
+                </div>
+                <p>{{ message.body }}</p>
+            </article>
+            {% else %}
+            <p class="empty-state">No messages yet. Start the thread if you need to add more context.</p>
+            {% endfor %}
+        </div>
+    </article>
+
+    <article class="panel">
+        <p class="panel-label">Order timeline</p>
+        <div class="feed timeline-feed">
+            {% for item in history %}
+            <article class="feed-item">
+                <div class="feed-meta">
+                    <strong>{{ status_labels.get(item.status, item.status) }}</strong>
+                    <span>{{ item.actor_role|title }} · {{ item.created_at|pretty_datetime }}</span>
+                </div>
+                <p>{{ item.note }}</p>
+            </article>
+            {% else %}
+            <p class="empty-state">The status timeline will appear here as updates are recorded.</p>
+            {% endfor %}
+        </div>
+    </article>
+</section>
+{% endblock %}
+
+{% block body_scripts %}
+{% if payment_provider == "razorpay" %}
+<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+{% endif %}
+{% endblock %}
