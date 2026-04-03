@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+
+{% block title %}Owner Dashboard | {{ app_name }}{% endblock %}
+
+{% block content %}
+<section class="order-hero">
+    <div>
+        <p class="eyebrow">Owner panel</p>
+        <h1>Approve workers and control the final quote.</h1>
+        <p class="hero-text">This is the only panel that shows the full money split, including worker earning and owner commission.</p>
+    </div>
+    <div class="stat-row compact">
+        <article class="stat-card">
+            <strong>{{ pending_workers|length }}</strong>
+            <span>pending workers</span>
+        </article>
+        <article class="stat-card">
+            <strong>{{ quote_pending_assignments|length }}</strong>
+            <span>quotes waiting review</span>
+        </article>
+        <article class="stat-card">
+            <strong>{{ recent_assignments|length }}</strong>
+            <span>recent assignments</span>
+        </article>
+    </div>
+</section>
+
+<section class="section split">
+    <article class="panel">
+        <p class="panel-label">Pending registrations</p>
+        <div class="feed cards-feed">
+            {% for worker in pending_workers %}
+            <article class="job-card detailed">
+                <div class="job-topline">
+                    <div>
+                        <h3>{{ worker.full_name }}</h3>
+                        <p>@{{ worker.username }} · {{ worker.whatsapp }}</p>
+                    </div>
+                    <span class="status-chip warning">Pending</span>
+                </div>
+                <p>{{ worker.expertise }}</p>
+                <div class="job-details">
+                    <span>Payout: {{ worker.payout_method }}</span>
+                    <span>{{ worker.payout_target }}</span>
+                    <span>Registered: {{ worker.created_at|pretty_datetime }}</span>
+                </div>
+                <div class="owner-actions">
+                    <form method="post" action="{{ url_for('approve_worker', worker_id=worker.id) }}">
+                        <button class="button primary" type="submit">Approve</button>
+                    </form>
+                    <form method="post" action="{{ url_for('reject_worker', worker_id=worker.id) }}">
+                        <button class="button ghost" type="submit">Reject</button>
+                    </form>
+                </div>
+            </article>
+            {% else %}
+            <p class="empty-state">No worker registrations are waiting right now.</p>
+            {% endfor %}
+        </div>
+    </article>
+
+    <article class="panel">
+        <p class="panel-label">Quote pending assignments</p>
+        <div class="feed cards-feed">
+            {% for assignment in quote_pending_assignments %}
+            <article class="job-card detailed">
+                <div class="job-topline">
+                    <div>
+                        <h3>{{ assignment.title }}</h3>
+                        <p>{{ service_lookup.get(assignment.service_type, assignment.service_type) }} · {{ assignment.page_count }} pages/slides</p>
+                    </div>
+                    <span class="status-chip warning">Needs final quote</span>
+                </div>
+                <div class="job-details">
+                    <span>Budget range: {{ assignment.budget_min|currency_inr }} to {{ assignment.budget_max|currency_inr }}</span>
+                    <span>Deadline: {{ assignment.deadline|pretty_datetime }}</span>
+                </div>
+                <form method="post" action="{{ url_for('quote_assignment', public_id=assignment.public_id) }}" class="stack panel inner-panel">
+                    <label class="field">
+                        <span>Final agreed price</span>
+                        <input type="number" name="final_price" min="1" step="1" placeholder="{{ assignment.budget_max|int }}" required>
+                    </label>
+                    <label class="field">
+                        <span>Negotiation note</span>
+                        <textarea name="note" rows="3" placeholder="Optional note shown in the order timeline."></textarea>
+                    </label>
+                    <button class="button primary" type="submit">Save final quote</button>
+                </form>
+            </article>
+            {% else %}
+            <p class="empty-state">No assignments are waiting for quote review.</p>
+            {% endfor %}
+        </div>
+    </article>
+</section>
+
+<section class="section split">
+    <article class="panel">
+        <p class="panel-label">Recent approved workers</p>
+        <div class="feed cards-feed">
+            {% for worker in approved_workers %}
+            <article class="feed-item">
+                <div class="feed-meta">
+                    <strong>{{ worker.full_name }}</strong>
+                    <span>{{ worker.approved_at|pretty_datetime }}</span>
+                </div>
+                <p>@{{ worker.username }} · {{ worker.whatsapp }}</p>
+                <p>{{ worker.expertise }}</p>
+            </article>
+            {% else %}
+            <p class="empty-state">Approved workers will appear here.</p>
+            {% endfor %}
+        </div>
+    </article>
+
+    <article class="panel">
+        <p class="panel-label">Recent assignments</p>
+        <div class="feed cards-feed">
+            {% for assignment in recent_assignments %}
+            <article class="feed-item">
+                <div class="feed-meta">
+                    <strong>{{ assignment.public_id }}</strong>
+                    <span class="status-chip {{ status_tone(assignment.status) }}">{{ status_labels.get(assignment.status, assignment.status) }}</span>
+                </div>
+                <p>{{ assignment.title }}</p>
+                <p>Client range: {{ assignment.budget_min|currency_inr }} to {{ assignment.budget_max|currency_inr }}</p>
+                {% if assignment.final_price %}
+                <p>Final price: {{ assignment.final_price|currency_inr }}</p>
+                <p>Worker earning: {{ worker_earning_amount(assignment.final_price, worker_share)|currency_inr }}</p>
+                <p>Owner commission: {{ owner_commission_amount(assignment.final_price, worker_share)|currency_inr }}</p>
+                {% else %}
+                <p>Final price still pending</p>
+                {% endif %}
+            </article>
+            {% else %}
+            <p class="empty-state">Assignments will appear here.</p>
+            {% endfor %}
+        </div>
+    </article>
+</section>
+{% endblock %}
