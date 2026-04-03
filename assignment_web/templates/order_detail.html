@@ -8,6 +8,18 @@
         <p class="eyebrow">Student order workspace</p>
         <h1>{{ assignment.title }}</h1>
         <p class="hero-text">Track the assignment, complete payment, review worker messages, and approve the final delivery from one page.</p>
+        {% if push_enabled %}
+        <button
+            class="button ghost small push-enable"
+            type="button"
+            data-audience="STUDENT"
+            data-vapid-key="{{ vapid_public_key }}"
+            data-public-id="{{ assignment.public_id }}"
+            data-email="{{ assignment.email }}"
+        >
+            Enable browser alerts for this order
+        </button>
+        {% endif %}
     </div>
     <div class="status-chip {{ status_tone(assignment.status) }}">
         {{ status_labels.get(assignment.status, assignment.status) }}
