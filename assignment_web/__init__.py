@@ -25,6 +25,8 @@ def create_app() -> Flask:
         WORKER_SHARE=float(os.getenv("WORKER_SHARE", "0.65")),
         OWNER_USERNAME=os.getenv("OWNER_USERNAME", "owner"),
         OWNER_PASSWORD=os.getenv("OWNER_PASSWORD", "owner123"),
+        SHOW_DEMO_CREDENTIALS=os.getenv("SHOW_DEMO_CREDENTIALS", "true").lower() == "true",
+        SEED_DEMO_DATA=os.getenv("SEED_DEMO_DATA", "true").lower() == "true",
     )
 
     @app.template_filter("currency_inr")
@@ -56,6 +58,7 @@ def create_app() -> Flask:
             "worker_demo_password": "demo123",
             "owner_demo_username": app.config["OWNER_USERNAME"],
             "owner_demo_password": app.config["OWNER_PASSWORD"],
+            "show_demo_credentials": app.config["SHOW_DEMO_CREDENTIALS"],
         }
 
     init_db_app(app)
