@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}{{ app_name }}{% endblock %}</title>
+    <meta name="description" content="Assignment operations platform for student requests and worker delivery.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    {% block head %}{% endblock %}
+</head>
+<body>
+    <div class="page-shell">
+        <header class="topbar">
+            <a class="brand" href="{{ url_for('index') }}">
+                <span class="brand-mark">I</span>
+                <span>
+                    <strong>{{ app_name }}</strong>
+                    <small>Assignment delivery workspace</small>
+                </span>
+            </a>
+
+            <nav class="topnav">
+                <a href="{{ url_for('index') }}#services">Services</a>
+                <a href="{{ url_for('index') }}#workflow">Workflow</a>
+                <a href="{{ url_for('index') }}#submit">Submit</a>
+                {% if session.get('worker_id') %}
+                <a href="{{ url_for('worker_dashboard') }}">Worker Panel</a>
+                {% else %}
+                <a href="{{ url_for('worker_login') }}">Worker Login</a>
+                {% endif %}
+                {% if session.get('owner_authenticated') %}
+                <a href="{{ url_for('owner_dashboard') }}">Owner Panel</a>
+                {% else %}
+                <a href="{{ url_for('owner_login') }}">Owner Login</a>
+                {% endif %}
+            </nav>
+
+            <div class="topbar-actions">
+                <button class="theme-toggle" type="button" id="theme-toggle" aria-label="Toggle color theme">
+                    <span class="theme-toggle-track">
+                        <span class="theme-toggle-thumb"></span>
+                    </span>
+                    <span id="theme-toggle-label">Dark mode</span>
+                </button>
+                {% if session.get('worker_id') %}
+                <form method="post" action="{{ url_for('worker_logout') }}">
+                    <button class="button ghost small" type="submit">Log out</button>
+                </form>
+                {% elif session.get('owner_authenticated') %}
+                <form method="post" action="{{ url_for('owner_logout') }}">
+                    <button class="button ghost small" type="submit">Owner log out</button>
+                </form>
+                {% else %}
+                <a class="button ghost small" href="{{ url_for('worker_login') }}">Workers</a>
+                {% endif %}
+            </div>
+        </header>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+        <section class="flash-stack">
+            {% for category, message in messages %}
+            <div class="flash {{ category }}">{{ message }}</div>
+            {% endfor %}
+        </section>
+        {% endif %}
+        {% endwith %}
+
+        <main>
+            {% block content %}{% endblock %}
+        </main>
+
+        <footer class="site-footer">
+            <div>
+                <p>{{ app_name }} keeps student orders, worker approvals, payments, and tracking in one place.</p>
+                <small>Preferred payments: UPI, debit/credit cards, and net banking via {{ payment_provider_name }}.</small>
+            </div>
+            <div class="footer-links">
+                <a href="{{ url_for('index') }}#submit">Submit Assignment</a>
+                <a href="{{ url_for('worker_login') }}">Worker Access</a>
+                <a href="{{ url_for('owner_login') }}">Owner Access</a>
+            </div>
+        </footer>
+    </div>
+
+    <script src="{{ url_for('static', filename='app.js') }}" defer></script>
+    {% block body_scripts %}{% endblock %}
+</body>
+</html>
