@@ -21,10 +21,12 @@
             <button class="button primary" type="submit">Open owner dashboard</button>
         </form>
 
+        {% if show_demo_credentials %}
         <div class="demo-credentials">
             <strong>Demo owner</strong>
             <p><code>{{ owner_demo_username }}</code> / <code>{{ owner_demo_password }}</code></p>
         </div>
+        {% endif %}
     </div>
 </section>
 {% endblock %}
