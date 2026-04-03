@@ -128,7 +128,8 @@ def init_app(app) -> None:
     with app.app_context():
         init_db()
         migrate_db()
-        seed_demo_data()
+        if current_app.config["SEED_DEMO_DATA"]:
+            seed_demo_data()
 
 
 def migrate_db() -> None:
