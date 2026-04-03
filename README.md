@@ -36,6 +36,7 @@ py app.py
 4. Open `http://127.0.0.1:5000`
 
 The SQLite database is created automatically as `assignment_hub.db` in the project root and is seeded with demo workers plus sample assignments.
+Set `SEED_DEMO_DATA=false` and `SHOW_DEMO_CREDENTIALS=false` when deploying publicly.
 
 ## Deployment
 
@@ -76,6 +77,7 @@ Basic Render flow:
 3. If using the included `render.yaml`, Render will pick up the service config automatically.
 4. Set `OWNER_PASSWORD` in Render before going live.
 5. If you want live payments, also set `PAYMENT_PROVIDER=razorpay`, `RAZORPAY_KEY_ID`, and `RAZORPAY_KEY_SECRET`.
+6. Keep `SHOW_DEMO_CREDENTIALS=false` and `SEED_DEMO_DATA=false` in production so the public site starts clean.
 
 ## Demo credentials
 
