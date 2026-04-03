@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block title %}Reset Worker Password | {{ app_name }}{% endblock %}
+
+{% block content %}
+<section class="center-stage">
+    <div class="panel auth-panel wide">
+        <p class="eyebrow">Worker password reset</p>
+        <h1>Request a verification code</h1>
+        <p>Enter your username and choose where the code should be sent. The code can arrive by email, SMS, or WhatsApp if that contact method is available on your worker account.</p>
+
+        <form method="post" class="stack">
+            <label class="field">
+                <span>Username</span>
+                <input type="text" name="username" placeholder="worker.username" required>
+            </label>
+            <label class="field">
+                <span>Send code through</span>
+                <select name="channel" required>
+                    <option value="">Choose a method</option>
+                    <option value="email">Email</option>
+                    <option value="sms">SMS</option>
+                    <option value="whatsapp">WhatsApp</option>
+                </select>
+            </label>
+            <button class="button primary" type="submit">Send verification code</button>
+        </form>
+
+        <a class="text-link" href="{{ url_for('worker_login') }}">Back to worker login</a>
+    </div>
+</section>
+{% endblock %}
