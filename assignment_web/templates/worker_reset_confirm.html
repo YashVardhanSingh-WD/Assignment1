@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block title %}Confirm Worker Reset | {{ app_name }}{% endblock %}
+
+{% block content %}
+<section class="center-stage">
+    <div class="panel auth-panel wide">
+        <p class="eyebrow">Worker password reset</p>
+        <h1>Confirm your verification code</h1>
+        <p>Enter the code you received and choose a new password.</p>
+
+        <form method="post" class="stack">
+            <label class="field">
+                <span>Username</span>
+                <input type="text" name="username" value="{{ username }}" placeholder="worker.username" required>
+            </label>
+            <label class="field">
+                <span>Verification code</span>
+                <input type="text" name="code" inputmode="numeric" placeholder="123456" required>
+            </label>
+            <label class="field">
+                <span>New password</span>
+                <input type="password" name="new_password" placeholder="Create a new password" required>
+            </label>
+            <label class="field">
+                <span>Confirm new password</span>
+                <input type="password" name="confirm_password" placeholder="Repeat the new password" required>
+            </label>
+            <button class="button primary" type="submit">Reset password</button>
+        </form>
+
+        <a class="text-link" href="{{ url_for('worker_reset_password') }}">Request another code</a>
+    </div>
+</section>
+{% endblock %}
