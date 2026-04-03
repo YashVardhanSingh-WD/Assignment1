@@ -8,6 +8,16 @@
         <p class="eyebrow">Owner panel</p>
         <h1>Approve workers and control the final quote.</h1>
         <p class="hero-text">This is the only panel that shows the full money split, including worker earning and owner commission.</p>
+        {% if push_enabled %}
+        <button
+            class="button ghost small push-enable"
+            type="button"
+            data-audience="OWNER"
+            data-vapid-key="{{ vapid_public_key }}"
+        >
+            Enable browser alerts
+        </button>
+        {% endif %}
     </div>
     <div class="stat-row compact">
         <article class="stat-card">
@@ -64,7 +74,7 @@
                 <div class="job-topline">
                     <div>
                         <h3>{{ worker.full_name }}</h3>
-                        <p>@{{ worker.username }} · {{ worker.whatsapp }}</p>
+                        <p>@{{ worker.username }} · {{ worker.email }} · {{ worker.whatsapp }}</p>
                     </div>
                     <span class="status-chip warning">Pending</span>
                 </div>
@@ -134,8 +144,11 @@
                     <strong>{{ worker.full_name }}</strong>
                     <span>{{ worker.approved_at|pretty_datetime }}</span>
                 </div>
-                <p>@{{ worker.username }} · {{ worker.whatsapp }}</p>
+                <p>@{{ worker.username }} · {{ worker.email or "No email saved" }} · {{ worker.whatsapp }}</p>
                 <p>{{ worker.expertise }}</p>
+                <form method="post" action="{{ url_for('remove_worker', worker_id=worker.id) }}">
+                    <button class="button ghost small" type="submit">Remove worker</button>
+                </form>
             </article>
             {% else %}
             <p class="empty-state">Approved workers will appear here.</p>
@@ -164,6 +177,48 @@
             </article>
             {% else %}
             <p class="empty-state">Assignments will appear here.</p>
+            {% endfor %}
+        </div>
+    </article>
+</section>
+
+<section class="section">
+    <article class="panel">
+        <p class="panel-label">Client controls</p>
+        <div class="feed cards-feed">
+            {% for client in recent_clients %}
+            <article class="job-card detailed">
+                <div class="job-topline">
+                    <div>
+                        <h3>{{ client.full_name }}</h3>
+                        <p>{{ client.email }} · {{ client.whatsapp }}</p>
+                    </div>
+                    <span class="status-chip {{ 'danger' if client.is_blocked else 'success' }}">
+                        {{ 'Blocked' if client.is_blocked else 'Active' }}
+                    </span>
+                </div>
+                <div class="job-details">
+                    <span>Total orders: {{ client.order_count }}</span>
+                    <span>Last order: {{ client.last_order_at|pretty_datetime if client.last_order_at else 'No orders yet' }}</span>
+                </div>
+                {% if client.is_blocked and client.blocked_reason %}
+                <p>Blocked reason: {{ client.blocked_reason }}</p>
+                {% endif %}
+                <div class="owner-actions">
+                    {% if client.is_blocked %}
+                    <form method="post" action="{{ url_for('unblock_client', student_id=client.id) }}">
+                        <button class="button primary" type="submit">Unblock client</button>
+                    </form>
+                    {% else %}
+                    <form method="post" action="{{ url_for('block_client', student_id=client.id) }}" class="stack">
+                        <input type="hidden" name="reason" value="Blocked by owner review">
+                        <button class="button ghost" type="submit">Block client</button>
+                    </form>
+                    {% endif %}
+                </div>
+            </article>
+            {% else %}
+            <p class="empty-state">Recent clients will appear here.</p>
             {% endfor %}
         </div>
     </article>
