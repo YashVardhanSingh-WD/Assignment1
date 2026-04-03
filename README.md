@@ -13,8 +13,12 @@ Ink & Insight is a Flask + SQLite assignment operations platform built for stude
 - Student budget range plus owner-controlled final quote
 - Order tracking page with payment state, status timeline, and message thread
 - Worker login, worker registration, and owner approval flow
+- Worker password reset with verification code delivery
 - Assignment claim, status updates, and student approval flow
 - Backend SQLite database for students, workers, assignments, messages, status history, and payouts
+- In-app notifications for students, workers, and owner
+- Email, SMS, WhatsApp, and browser push notification plumbing
+- Owner controls for removing workers and blocking/unblocking clients
 - Demo payment mode for local testing
 - Razorpay-ready order creation and signature verification flow for live payments
 
@@ -126,11 +130,52 @@ The app will then:
 - Change `SECRET_KEY`
 - Replace demo worker passwords
 - Replace owner login credentials
-- Add webhook handling for payment reconciliation and notifications
-- Add file uploads, email delivery, and WhatsApp/SMS integrations
+- Add webhook handling for payment reconciliation when you switch to live gateways
 - Expand role controls if you want a separate admin panel beyond the worker dashboard
 - Worker dashboard only shows the worker earning amount, while the owner panel shows the full split including commission
 - If you want automated live worker payouts, connect a payout product on top of the internal payout ledger
+
+## Notifications and reset setup
+
+The app now supports these channels:
+
+- In-app notifications
+- Email via SMTP
+- SMS via Twilio Messaging
+- WhatsApp via Twilio Messaging
+- Browser push notifications using Web Push and VAPID keys
+- Worker password reset codes by email, SMS, or WhatsApp
+
+Environment variables to configure:
+
+```powershell
+$env:SMTP_HOST='smtp.example.com'
+$env:SMTP_PORT='587'
+$env:SMTP_USERNAME='noreply@example.com'
+$env:SMTP_PASSWORD='your_smtp_password'
+$env:SMTP_FROM_EMAIL='noreply@example.com'
+$env:SMTP_USE_TLS='true'
+
+$env:TWILIO_ACCOUNT_SID='AC...'
+$env:TWILIO_AUTH_TOKEN='your_auth_token'
+$env:TWILIO_SMS_FROM='+1234567890'
+$env:TWILIO_WHATSAPP_FROM='whatsapp:+14155238886'
+
+$env:OWNER_ALERT_EMAIL='owner@example.com'
+$env:OWNER_ALERT_PHONE='+919999999999'
+$env:OWNER_ALERT_WHATSAPP='+919999999999'
+
+$env:VAPID_PUBLIC_KEY='your_public_key'
+$env:VAPID_PRIVATE_KEY='your_private_key'
+$env:VAPID_CLAIMS_EMAIL='owner@example.com'
+```
+
+What happens after this setup:
+
+- As soon as a student posts an order, the order number is sent to the student by email, SMS, and WhatsApp if those channels are configured.
+- Quote-ready, payment, worker progress, completion, approval, and payout updates are sent through the same notification system.
+- Workers can request a password reset code and receive it through email, SMS, or WhatsApp.
+- Browser push can be enabled from the student order page, worker dashboard, and owner dashboard.
 
 ## Project structure
 
