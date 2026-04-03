@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 from flask import Flask
 
 from .database import init_app as init_db_app
+from .notifications import has_push_config
 from .payments import get_payment_gateway
 from .routes import register_routes
 from .services import get_timezone
@@ -27,6 +28,23 @@ def create_app() -> Flask:
         OWNER_PASSWORD=os.getenv("OWNER_PASSWORD", "owner123"),
         SHOW_DEMO_CREDENTIALS=os.getenv("SHOW_DEMO_CREDENTIALS", "true").lower() == "true",
         SEED_DEMO_DATA=os.getenv("SEED_DEMO_DATA", "true").lower() == "true",
+        SMTP_HOST=os.getenv("SMTP_HOST", ""),
+        SMTP_PORT=int(os.getenv("SMTP_PORT", "587")),
+        SMTP_USERNAME=os.getenv("SMTP_USERNAME", ""),
+        SMTP_PASSWORD=os.getenv("SMTP_PASSWORD", ""),
+        SMTP_FROM_EMAIL=os.getenv("SMTP_FROM_EMAIL", ""),
+        SMTP_USE_TLS=os.getenv("SMTP_USE_TLS", "true").lower() == "true",
+        TWILIO_ACCOUNT_SID=os.getenv("TWILIO_ACCOUNT_SID", ""),
+        TWILIO_AUTH_TOKEN=os.getenv("TWILIO_AUTH_TOKEN", ""),
+        TWILIO_SMS_FROM=os.getenv("TWILIO_SMS_FROM", ""),
+        TWILIO_WHATSAPP_FROM=os.getenv("TWILIO_WHATSAPP_FROM", ""),
+        OWNER_ALERT_EMAIL=os.getenv("OWNER_ALERT_EMAIL", ""),
+        OWNER_ALERT_PHONE=os.getenv("OWNER_ALERT_PHONE", ""),
+        OWNER_ALERT_WHATSAPP=os.getenv("OWNER_ALERT_WHATSAPP", ""),
+        VAPID_PUBLIC_KEY=os.getenv("VAPID_PUBLIC_KEY", ""),
+        VAPID_PRIVATE_KEY=os.getenv("VAPID_PRIVATE_KEY", ""),
+        VAPID_CLAIMS_EMAIL=os.getenv("VAPID_CLAIMS_EMAIL", ""),
+        PASSWORD_RESET_CODE_MINUTES=int(os.getenv("PASSWORD_RESET_CODE_MINUTES", "15")),
     )
 
     @app.template_filter("currency_inr")
@@ -59,6 +77,8 @@ def create_app() -> Flask:
             "owner_demo_username": app.config["OWNER_USERNAME"],
             "owner_demo_password": app.config["OWNER_PASSWORD"],
             "show_demo_credentials": app.config["SHOW_DEMO_CREDENTIALS"],
+            "push_enabled": has_push_config(),
+            "vapid_public_key": app.config["VAPID_PUBLIC_KEY"],
         }
 
     init_db_app(app)
