@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta
+import json
+
 from flask import (
     Flask,
     abort,
@@ -9,13 +12,31 @@ from flask import (
     redirect,
     render_template,
     request,
+    send_from_directory,
     session,
     url_for,
 )
 
 from .database import get_db
+from .notifications import (
+    channel_configured,
+    create_notification_record,
+    dispatch_notification,
+    has_push_config,
+    remove_push_subscription,
+    send_worker_reset_code,
+    upsert_push_subscription,
+)
 from .payments import PaymentGatewayError, get_payment_gateway
-from .security import hash_password, owner_required, verify_password, worker_required
+from .security import (
+    generate_reset_code,
+    hash_password,
+    hash_reset_code,
+    owner_required,
+    verify_password,
+    verify_reset_code,
+    worker_required,
+)
 from .services import (
     PAYMENT_METHODS,
     SERVICE_OPTIONS,
@@ -51,6 +72,84 @@ def register_routes(app: Flask) -> None:
             submission_modes=SUBMISSION_MODES,
             payment_methods=PAYMENT_METHODS,
         )
+
+    @app.route("/service-worker.js", methods=["GET"])
+    def service_worker():
+        response = send_from_directory(app.static_folder, "service-worker.js")
+        response.headers["Service-Worker-Allowed"] = "/"
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+    @app.route("/push/subscribe", methods=["POST"])
+    def subscribe_push():
+        if not has_push_config():
+            return jsonify({"error": "Browser push is not configured yet."}), 400
+
+        payload = request.get_json(silent=True) or {}
+        subscription = payload.get("subscription") or {}
+        keys = subscription.get("keys") or {}
+        endpoint = subscription.get("endpoint", "").strip()
+        p256dh = keys.get("p256dh", "").strip()
+        auth = keys.get("auth", "").strip()
+        content_encoding = subscription.get("contentEncoding")
+        audience_type = (payload.get("audience_type") or "").strip().upper()
+
+        if not endpoint or not p256dh or not auth:
+            return jsonify({"error": "Push subscription details were incomplete."}), 400
+
+        db = get_db()
+        if audience_type == "OWNER":
+            if not session.get("owner_authenticated"):
+                return jsonify({"error": "Owner login is required for owner push alerts."}), 403
+            upsert_push_subscription(
+                audience_type="OWNER",
+                endpoint=endpoint,
+                p256dh=p256dh,
+                auth=auth,
+                content_encoding=content_encoding,
+            )
+        elif audience_type == "WORKER":
+            worker_id = session.get("worker_id")
+            if not worker_id:
+                return jsonify({"error": "Worker login is required for worker push alerts."}), 403
+            upsert_push_subscription(
+                audience_type="WORKER",
+                worker_id=int(worker_id),
+                endpoint=endpoint,
+                p256dh=p256dh,
+                auth=auth,
+                content_encoding=content_encoding,
+            )
+        elif audience_type == "STUDENT":
+            public_id = (payload.get("public_id") or "").strip().upper()
+            email = (payload.get("email") or "").strip().lower()
+            assignment = _get_assignment_bundle(public_id)
+            if not assignment or assignment["email"].lower() != email:
+                return jsonify({"error": "Student order verification failed for push alerts."}), 403
+            upsert_push_subscription(
+                audience_type="STUDENT",
+                student_id=int(assignment["student_id"]),
+                assignment_id=int(assignment["id"]),
+                endpoint=endpoint,
+                p256dh=p256dh,
+                auth=auth,
+                content_encoding=content_encoding,
+            )
+        else:
+            return jsonify({"error": "Unsupported push audience."}), 400
+
+        db.commit()
+        return jsonify({"ok": True})
+
+    @app.route("/push/unsubscribe", methods=["POST"])
+    def unsubscribe_push():
+        payload = request.get_json(silent=True) or {}
+        endpoint = (payload.get("endpoint") or "").strip()
+        if not endpoint:
+            return jsonify({"error": "Push endpoint is required."}), 400
+        remove_push_subscription(endpoint)
+        get_db().commit()
+        return jsonify({"ok": True})
 
     @app.route("/track", methods=["POST"])
     def track_assignment():
@@ -128,6 +227,14 @@ def register_routes(app: Flask) -> None:
             return redirect(url_for("index"))
 
         db = get_db()
+        existing_student = db.execute(
+            "SELECT id, is_blocked FROM students WHERE email = ?",
+            (email,),
+        ).fetchone()
+        if existing_student and existing_student["is_blocked"]:
+            flash("This client account is blocked from creating new orders. Please contact the owner.", "error")
+            return redirect(url_for("index"))
+
         timestamp = now_iso(app.config["APP_TIMEZONE"])
         db.execute(
             """
@@ -205,7 +312,7 @@ def register_routes(app: Flask) -> None:
             _notify_student(
                 assignment,
                 "Order received",
-                "Your assignment request is saved. The owner will review your budget range and confirm the final payable amount.",
+                f"Your assignment request is saved with order number {assignment['public_id']}. The owner will review your budget range and confirm the final payable amount.",
                 tone="accent",
             )
             _notify_owner(
@@ -453,6 +560,9 @@ def register_routes(app: Flask) -> None:
             if worker["approval_status"] == "REJECTED":
                 flash("This worker registration was not approved by the owner.", "error")
                 return redirect(url_for("worker_login"))
+            if worker["approval_status"] == "REMOVED":
+                flash("This worker account was removed by the owner.", "error")
+                return redirect(url_for("worker_login"))
 
             session.clear()
             session["worker_id"] = worker["id"]
@@ -467,6 +577,7 @@ def register_routes(app: Flask) -> None:
         form = request.form
         full_name = form.get("full_name", "").strip()
         username = form.get("username", "").strip().lower()
+        email = form.get("email", "").strip().lower()
         whatsapp = normalize_phone(form.get("whatsapp", ""))
         expertise = form.get("expertise", "").strip()
         payout_method = form.get("payout_method", "").strip()
@@ -478,6 +589,7 @@ def register_routes(app: Flask) -> None:
             for label, value in [
                 ("full name", full_name),
                 ("username", username),
+                ("email", email),
                 ("WhatsApp number", whatsapp),
                 ("expertise", expertise),
                 ("payout method", payout_method),
@@ -500,14 +612,15 @@ def register_routes(app: Flask) -> None:
         db.execute(
             """
             INSERT INTO workers (
-                full_name, username, password_hash, whatsapp, expertise, payout_method,
+                full_name, username, email, password_hash, whatsapp, expertise, payout_method,
                 payout_target, is_active, approval_status, approved_at, approved_by, created_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 full_name,
                 username,
+                email,
                 hash_password(password),
                 whatsapp,
                 expertise,
@@ -536,6 +649,154 @@ def register_routes(app: Flask) -> None:
         db.commit()
         flash("Worker registration submitted. The owner must approve it before you can log in.", "success")
         return redirect(url_for("worker_login"))
+
+    @app.route("/worker/reset-password", methods=["GET", "POST"])
+    def worker_reset_password():
+        if request.method == "POST":
+            username = request.form.get("username", "").strip().lower()
+            channel = request.form.get("channel", "").strip().lower()
+            db = get_db()
+            worker = db.execute(
+                """
+                SELECT id, full_name, username, email, whatsapp, is_active, approval_status
+                FROM workers
+                WHERE username = ?
+                """,
+                (username,),
+            ).fetchone()
+            if not worker:
+                flash("We could not find a worker account with that username.", "error")
+                return redirect(url_for("worker_reset_password"))
+            if worker["approval_status"] == "REMOVED" or not worker["is_active"]:
+                flash("This worker account is inactive. Please contact the owner.", "error")
+                return redirect(url_for("worker_reset_password"))
+
+            channel_map = {
+                "email": worker["email"],
+                "sms": worker["whatsapp"],
+                "whatsapp": worker["whatsapp"],
+            }
+            destination = channel_map.get(channel)
+            if not destination:
+                flash("That reset channel is not available for this worker account.", "error")
+                return redirect(url_for("worker_reset_password"))
+            if not channel_configured(channel):
+                flash("That reset channel is not configured yet by the owner.", "error")
+                return redirect(url_for("worker_reset_password"))
+
+            reset_code = generate_reset_code()
+            timestamp = now_iso(app.config["APP_TIMEZONE"])
+            code_hash = hash_reset_code(app.config["SECRET_KEY"], worker["id"], reset_code)
+            expires_at = (
+                datetime.now()
+                + timedelta(minutes=int(app.config["PASSWORD_RESET_CODE_MINUTES"]))
+            ).replace(second=0, microsecond=0).isoformat()
+            db.execute(
+                "UPDATE password_reset_codes SET used_at = ? WHERE worker_id = ? AND used_at IS NULL",
+                (timestamp, worker["id"]),
+            )
+            db.execute(
+                """
+                INSERT INTO password_reset_codes (
+                    worker_id, delivery_channel, code_hash, expires_at, created_at
+                )
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    worker["id"],
+                    channel.upper(),
+                    code_hash,
+                    expires_at,
+                    timestamp,
+                ),
+            )
+            delivered = send_worker_reset_code(
+                worker_id=worker["id"],
+                title="Worker password reset code",
+                body=(
+                    f"Hello {worker['full_name']}, your password reset code is {reset_code}. "
+                    f"It expires in {app.config['PASSWORD_RESET_CODE_MINUTES']} minutes."
+                ),
+                channel=channel,
+                email=worker["email"],
+                phone=worker["whatsapp"],
+            )
+            if not delivered:
+                db.execute(
+                    """
+                    DELETE FROM password_reset_codes
+                    WHERE worker_id = ? AND code_hash = ? AND used_at IS NULL
+                    """,
+                    (worker["id"], code_hash),
+                )
+                db.commit()
+                flash("The verification code could not be delivered. Please ask the owner to check the notification setup.", "error")
+                return redirect(url_for("worker_reset_password"))
+            db.commit()
+            flash("A verification code has been sent. Enter it with your new password below.", "success")
+            return redirect(url_for("worker_reset_password_confirm", username=worker["username"]))
+
+        return render_template("worker_reset_request.html")
+
+    @app.route("/worker/reset-password/confirm", methods=["GET", "POST"])
+    def worker_reset_password_confirm():
+        username = request.values.get("username", "").strip().lower()
+        if request.method == "POST":
+            code = request.form.get("code", "").strip()
+            new_password = request.form.get("new_password", "")
+            confirm_password = request.form.get("confirm_password", "")
+            if not username or not code or not new_password:
+                flash("Please complete the username, verification code, and new password.", "error")
+                return redirect(url_for("worker_reset_password_confirm", username=username))
+            if new_password != confirm_password:
+                flash("The new password and confirm password did not match.", "error")
+                return redirect(url_for("worker_reset_password_confirm", username=username))
+
+            db = get_db()
+            worker = db.execute(
+                "SELECT id, username FROM workers WHERE username = ?",
+                (username,),
+            ).fetchone()
+            if not worker:
+                flash("We could not find that worker account.", "error")
+                return redirect(url_for("worker_reset_password"))
+
+            reset_row = db.execute(
+                """
+                SELECT id, code_hash, expires_at
+                FROM password_reset_codes
+                WHERE worker_id = ? AND used_at IS NULL
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (worker["id"],),
+            ).fetchone()
+            if not reset_row:
+                flash("No active reset request was found. Request a new code first.", "error")
+                return redirect(url_for("worker_reset_password"))
+
+            expires_at = datetime.fromisoformat(reset_row["expires_at"])
+            if expires_at < datetime.now(expires_at.tzinfo):
+                flash("That verification code has expired. Request a new one.", "error")
+                return redirect(url_for("worker_reset_password"))
+            if not verify_reset_code(app.config["SECRET_KEY"], worker["id"], code, reset_row["code_hash"]):
+                flash("The verification code was incorrect.", "error")
+                return redirect(url_for("worker_reset_password_confirm", username=username))
+
+            timestamp = now_iso(app.config["APP_TIMEZONE"])
+            db.execute(
+                "UPDATE workers SET password_hash = ? WHERE id = ?",
+                (hash_password(new_password), worker["id"]),
+            )
+            db.execute(
+                "UPDATE password_reset_codes SET used_at = ? WHERE id = ?",
+                (timestamp, reset_row["id"]),
+            )
+            db.commit()
+            flash("Password reset successful. You can now log in with the new password.", "success")
+            return redirect(url_for("worker_login"))
+
+        return render_template("worker_reset_confirm.html", username=username)
 
     @app.route("/worker/logout", methods=["POST"])
     def worker_logout():
@@ -784,7 +1045,7 @@ def register_routes(app: Flask) -> None:
         db = get_db()
         pending_workers = db.execute(
             """
-            SELECT id, full_name, username, whatsapp, expertise, payout_method, payout_target, created_at
+            SELECT id, full_name, username, email, whatsapp, expertise, payout_method, payout_target, created_at
             FROM workers
             WHERE approval_status = 'PENDING'
             ORDER BY created_at ASC
@@ -792,7 +1053,7 @@ def register_routes(app: Flask) -> None:
         ).fetchall()
         approved_workers = db.execute(
             """
-            SELECT full_name, username, whatsapp, expertise, payout_method, approval_status, approved_at
+            SELECT id, full_name, username, email, whatsapp, expertise, payout_method, approval_status, approved_at
             FROM workers
             WHERE approval_status = 'APPROVED'
             ORDER BY approved_at DESC, created_at DESC
@@ -815,6 +1076,25 @@ def register_routes(app: Flask) -> None:
             LIMIT 10
             """
         ).fetchall()
+        recent_clients = db.execute(
+            """
+            SELECT
+                s.id,
+                s.full_name,
+                s.email,
+                s.whatsapp,
+                s.is_blocked,
+                s.blocked_reason,
+                s.created_at AS registered_at,
+                COUNT(a.id) AS order_count,
+                MAX(a.created_at) AS last_order_at
+            FROM students s
+            LEFT JOIN assignments a ON a.student_id = s.id
+            GROUP BY s.id, s.full_name, s.email, s.whatsapp, s.is_blocked, s.blocked_reason, s.created_at
+            ORDER BY COALESCE(MAX(a.created_at), s.created_at) DESC
+            LIMIT 12
+            """
+        ).fetchall()
         owner_notifications, owner_unread_notifications = _fetch_notifications_with_unread(
             "OWNER",
             limit=10,
@@ -826,6 +1106,7 @@ def register_routes(app: Flask) -> None:
             approved_workers=approved_workers,
             quote_pending_assignments=quote_pending_assignments,
             recent_assignments=recent_assignments,
+            recent_clients=recent_clients,
             owner_notifications=owner_notifications,
             owner_unread_notifications=owner_unread_notifications,
             status_labels=STATUS_LABELS,
@@ -939,6 +1220,100 @@ def register_routes(app: Flask) -> None:
         flash("Worker registration was rejected.", "success")
         return redirect(url_for("owner_dashboard"))
 
+    @app.route("/owner/workers/<int:worker_id>/remove", methods=["POST"])
+    @owner_required
+    def remove_worker(worker_id: int):
+        db = get_db()
+        worker = db.execute(
+            "SELECT id, full_name, approval_status FROM workers WHERE id = ?",
+            (worker_id,),
+        ).fetchone()
+        if not worker:
+            abort(404)
+
+        active_assignment = db.execute(
+            """
+            SELECT public_id
+            FROM assignments
+            WHERE assigned_worker_id = ? AND status IN ('ASSIGNED', 'IN_PROGRESS', 'COMPLETED')
+            LIMIT 1
+            """,
+            (worker_id,),
+        ).fetchone()
+        if active_assignment:
+            flash(
+                f"You cannot remove this worker while assignment {active_assignment['public_id']} is still active.",
+                "error",
+            )
+            return redirect(url_for("owner_dashboard"))
+
+        timestamp = now_iso(app.config["APP_TIMEZONE"])
+        db.execute(
+            """
+            UPDATE workers
+            SET approval_status = 'REMOVED', is_active = 0, removed_at = ?, approved_by = ?
+            WHERE id = ?
+            """,
+            (timestamp, session.get("owner_name", "owner"), worker_id),
+        )
+        _notify_worker(
+            worker_id,
+            "Worker account removed",
+            "The owner removed your worker access. You can no longer log in or claim assignments.",
+            tone="danger",
+        )
+        db.commit()
+        flash("Worker removed successfully.", "success")
+        return redirect(url_for("owner_dashboard"))
+
+    @app.route("/owner/clients/<int:student_id>/block", methods=["POST"])
+    @owner_required
+    def block_client(student_id: int):
+        reason = request.form.get("reason", "").strip() or "Blocked by owner"
+        db = get_db()
+        student = db.execute(
+            "SELECT id, full_name FROM students WHERE id = ?",
+            (student_id,),
+        ).fetchone()
+        if not student:
+            abort(404)
+
+        timestamp = now_iso(app.config["APP_TIMEZONE"])
+        db.execute(
+            """
+            UPDATE students
+            SET is_blocked = 1, blocked_at = ?, blocked_reason = ?
+            WHERE id = ?
+            """,
+            (timestamp, reason, student_id),
+        )
+        db.commit()
+        flash("Client blocked from creating new orders.", "success")
+        return redirect(url_for("owner_dashboard"))
+
+    @app.route("/owner/clients/<int:student_id>/unblock", methods=["POST"])
+    @owner_required
+    def unblock_client(student_id: int):
+        db = get_db()
+        student = db.execute(
+            "SELECT id FROM students WHERE id = ?",
+            (student_id,),
+        ).fetchone()
+        if not student:
+            abort(404)
+
+        db.execute(
+            """
+            UPDATE students
+            SET is_blocked = 0, blocked_at = NULL, blocked_reason = NULL
+            WHERE id = ?
+            """,
+            (student_id,),
+        )
+        db.commit()
+        flash("Client unblocked successfully.", "success")
+        return redirect(url_for("owner_dashboard"))
+
 
 def _get_assignment_bundle(public_id: str):
     db = get_db()
@@ -950,6 +1325,7 @@ def _get_assignment_bundle(public_id: str):
             s.email,
             s.whatsapp,
             w.full_name AS worker_name,
+            w.email AS worker_email,
             w.whatsapp AS worker_whatsapp
         FROM assignments a
         JOIN students s ON s.id = a.student_id
@@ -970,6 +1346,7 @@ def _get_assignment_bundle_by_id(assignment_id: int):
             s.email,
             s.whatsapp,
             w.full_name AS worker_name,
+            w.email AS worker_email,
             w.whatsapp AS worker_whatsapp
         FROM assignments a
         JOIN students s ON s.id = a.student_id
@@ -1088,38 +1465,49 @@ def _create_notification(
     worker_id: int | None = None,
     assignment_id: int | None = None,
     action_url: str | None = None,
-) -> None:
-    db = get_db()
-    db.execute(
-        """
-        INSERT INTO notifications (
-            audience_type, student_id, worker_id, assignment_id, title, body, tone, action_url, created_at
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            audience_type,
-            student_id,
-            worker_id,
-            assignment_id,
-            title,
-            body,
-            tone,
-            action_url,
-            now_iso(current_app.config["APP_TIMEZONE"]),
-        ),
+) -> int:
+    return create_notification_record(
+        audience_type=audience_type,
+        student_id=student_id,
+        worker_id=worker_id,
+        assignment_id=assignment_id,
+        title=title,
+        body=body,
+        tone=tone,
+        action_url=action_url,
     )
 
 
+def _owner_contacts() -> dict[str, str]:
+    return {
+        "email": current_app.config.get("OWNER_ALERT_EMAIL", ""),
+        "phone": current_app.config.get("OWNER_ALERT_PHONE", ""),
+        "whatsapp": current_app.config.get("OWNER_ALERT_WHATSAPP", ""),
+    }
+
+
 def _notify_student(assignment, title: str, body: str, tone: str = "muted") -> None:
-    _create_notification(
+    action_url = url_for("order_detail", public_id=assignment["public_id"], _external=True)
+    notification_id = _create_notification(
         audience_type="STUDENT",
         student_id=assignment["student_id"],
         assignment_id=assignment["id"],
         title=title,
         body=body,
         tone=tone,
-        action_url=url_for("order_detail", public_id=assignment["public_id"]),
+        action_url=action_url,
+    )
+    dispatch_notification(
+        notification_id=notification_id,
+        audience_type="STUDENT",
+        title=title,
+        body=body,
+        action_url=action_url,
+        email=assignment["email"],
+        phone=assignment["whatsapp"],
+        whatsapp=assignment["whatsapp"],
+        student_id=assignment["student_id"],
+        assignment_id=assignment["id"],
     )
 
 
@@ -1130,14 +1518,32 @@ def _notify_worker(
     assignment_id: int | None = None,
     tone: str = "muted",
 ) -> None:
-    _create_notification(
+    db = get_db()
+    worker = db.execute(
+        "SELECT email, whatsapp FROM workers WHERE id = ?",
+        (worker_id,),
+    ).fetchone()
+    action_url = url_for("worker_dashboard", _external=True)
+    notification_id = _create_notification(
         audience_type="WORKER",
         worker_id=worker_id,
         assignment_id=assignment_id,
         title=title,
         body=body,
         tone=tone,
-        action_url=url_for("worker_dashboard"),
+        action_url=action_url,
+    )
+    dispatch_notification(
+        notification_id=notification_id,
+        audience_type="WORKER",
+        title=title,
+        body=body,
+        action_url=action_url,
+        email=worker["email"] if worker else None,
+        phone=worker["whatsapp"] if worker else None,
+        whatsapp=worker["whatsapp"] if worker else None,
+        worker_id=worker_id,
+        assignment_id=assignment_id,
     )
 
 
@@ -1148,14 +1554,26 @@ def _notify_owner(
     worker_id: int | None = None,
     tone: str = "muted",
 ) -> None:
-    _create_notification(
+    contacts = _owner_contacts()
+    action_url = url_for("owner_dashboard", _external=True)
+    notification_id = _create_notification(
         audience_type="OWNER",
         worker_id=worker_id,
         assignment_id=assignment_id,
         title=title,
         body=body,
         tone=tone,
-        action_url=url_for("owner_dashboard"),
+        action_url=action_url,
+    )
+    dispatch_notification(
+        notification_id=notification_id,
+        audience_type="OWNER",
+        title=title,
+        body=body,
+        action_url=action_url,
+        email=contacts["email"] or None,
+        phone=contacts["phone"] or None,
+        whatsapp=contacts["whatsapp"] or None,
     )
 
 
