@@ -1,0 +1,213 @@
+{% extends "base.html" %}
+
+{% block title %}{{ app_name }} | Simple Assignment Help{% endblock %}
+
+{% block content %}
+<section class="hero">
+    <div class="hero-copy">
+        <p class="eyebrow">Simple assignment help</p>
+        <h1>Students post the work, share a budget range, and approved workers pick it up after the final quote is set.</h1>
+        <p class="hero-text">
+            This version is intentionally simpler. Fill in your assignment details, share your minimum and maximum budget,
+            wait for the final quote, complete payment, and then let an approved worker claim the task.
+        </p>
+        <div class="hero-actions">
+            <a class="button primary" href="#submit">Post assignment</a>
+            <a class="button ghost" href="{{ url_for('worker_login') }}">Worker area</a>
+        </div>
+        <div class="stat-row">
+            <article class="stat-card">
+                <strong>{{ stats.orders }}</strong>
+                <span>orders in the system</span>
+            </article>
+            <article class="stat-card">
+                <strong>{{ stats.workers }}</strong>
+                <span>approved workers</span>
+            </article>
+            <article class="stat-card">
+                <strong>{{ stats.pending_workers }}</strong>
+                <span>workers waiting for approval</span>
+            </article>
+        </div>
+    </div>
+
+    <aside class="hero-panel">
+        <div class="panel soft">
+            <p class="panel-label">Track order</p>
+            <h2>Already posted your work?</h2>
+            <p>Enter your order ID and email to reopen your order page.</p>
+            <form method="post" action="{{ url_for('track_assignment') }}" class="stack">
+                <label class="field">
+                    <span>Order ID</span>
+                    <input type="text" name="public_id" placeholder="AW-20260403-ABC123" required>
+                </label>
+                <label class="field">
+                    <span>Email</span>
+                    <input type="email" name="email" placeholder="you@example.com" required>
+                </label>
+                <button class="button primary" type="submit">Open order</button>
+            </form>
+        </div>
+    </aside>
+</section>
+
+<section class="section" id="services">
+    <div class="section-heading">
+        <p class="eyebrow">What students can post</p>
+        <h2>Just choose the type of work and explain what you need.</h2>
+    </div>
+    <div class="card-grid three">
+        <article class="card">
+            <h3>Handwritten work</h3>
+            <p>For physical delivery, students must provide full address, hostel name, room number, and landmarks.</p>
+        </article>
+        <article class="card">
+            <h3>PPT and Word files</h3>
+            <p>Presentation decks, reports, assignments, case studies, and other online submissions are supported.</p>
+        </article>
+        <article class="card">
+            <h3>Budget range first</h3>
+            <p>Students share a minimum and maximum budget. The final price is confirmed later after workload review.</p>
+        </article>
+    </div>
+</section>
+
+<section class="section" id="workflow">
+    <div class="section-heading">
+        <p class="eyebrow">How it works</p>
+        <h2>Short and simple workflow.</h2>
+    </div>
+    <div class="timeline-grid">
+        <article class="timeline-step">
+            <span>1</span>
+            <h3>Student posts assignment</h3>
+            <p>Add the work details, deadline, delivery method, and your budget range.</p>
+        </article>
+        <article class="timeline-step">
+            <span>2</span>
+            <h3>Owner confirms final price</h3>
+            <p>The owner checks workload and sets the final agreed amount before payment opens.</p>
+        </article>
+        <article class="timeline-step">
+            <span>3</span>
+            <h3>Approved worker accepts</h3>
+            <p>Workers must register first, then wait for owner approval before they can log in and work.</p>
+        </article>
+        <article class="timeline-step">
+            <span>4</span>
+            <h3>Delivery and approval</h3>
+            <p>The worker completes the job, the student approves it, and the payout is released.</p>
+        </article>
+    </div>
+</section>
+
+<section class="section section-accent" id="submit">
+    <div class="submission-layout single-focus">
+        <div class="submission-intro">
+            <p class="eyebrow">Post your assignment</p>
+            <h2>Fill this once and the system creates your order immediately.</h2>
+            <p>
+                Keep it simple: tell us what the work is, when you need it, and the budget range you are comfortable with.
+            </p>
+        </div>
+
+        <form method="post" action="{{ url_for('create_assignment') }}" class="submission-form" id="assignment-form">
+            <div class="form-grid">
+                <label class="field">
+                    <span>Full name</span>
+                    <input type="text" name="full_name" placeholder="Aarav Singh" required>
+                </label>
+                <label class="field">
+                    <span>Email</span>
+                    <input type="email" name="email" placeholder="student@example.com" required>
+                </label>
+                <label class="field">
+                    <span>WhatsApp number</span>
+                    <input type="tel" name="whatsapp" placeholder="+91 98765 43210" required>
+                </label>
+                <label class="field">
+                    <span>Assignment title</span>
+                    <input type="text" name="title" placeholder="Marketing presentation" required>
+                </label>
+                <label class="field">
+                    <span>Service type</span>
+                    <select name="service_type" required>
+                        <option value="">Choose service</option>
+                        {% for value, label in service_options %}
+                        <option value="{{ value }}">{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <label class="field">
+                    <span>Submission mode</span>
+                    <select name="submission_mode" id="submission-mode" required>
+                        <option value="">Choose mode</option>
+                        {% for value, label in submission_modes %}
+                        <option value="{{ value }}">{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <label class="field">
+                    <span>Approx. pages or slides</span>
+                    <input type="number" min="1" name="page_count" value="1" required>
+                </label>
+                <label class="field">
+                    <span>Deadline</span>
+                    <input type="datetime-local" name="deadline" required>
+                </label>
+                <label class="field">
+                    <span>Budget start (INR)</span>
+                    <input type="number" min="1" step="1" name="budget_min" placeholder="600" required>
+                </label>
+                <label class="field">
+                    <span>Budget end (INR)</span>
+                    <input type="number" min="1" step="1" name="budget_max" placeholder="900" required>
+                </label>
+                <label class="field">
+                    <span>Payment method</span>
+                    <select name="payment_method" required>
+                        <option value="">Choose payment method</option>
+                        {% for value, label in payment_methods %}
+                        <option value="{{ value }}">{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+            </div>
+
+            <div class="form-grid handwritten-fields" id="handwritten-fields">
+                <label class="field">
+                    <span>Delivery address</span>
+                    <input type="text" name="delivery_address" placeholder="University campus full address">
+                </label>
+                <label class="field">
+                    <span>Hostel name</span>
+                    <input type="text" name="hostel_name" placeholder="Girls Hostel A">
+                </label>
+                <label class="field">
+                    <span>Room number</span>
+                    <input type="text" name="room_number" placeholder="217">
+                </label>
+                <label class="field">
+                    <span>Landmark or note</span>
+                    <input type="text" name="location_notes" placeholder="Call before arriving">
+                </label>
+            </div>
+
+            <label class="field full">
+                <span>Requirements</span>
+                <textarea name="requirements" rows="6" placeholder="Write what you need, format rules, references, submission details, and anything important." required></textarea>
+            </label>
+
+            <div class="simple-price-box">
+                <strong id="chosen-price-label">INR 0 - INR 0</strong>
+                <span>The owner reviews this range and then confirms the final amount for payment.</span>
+            </div>
+
+            <div class="form-meta">
+                <p>Students share a budget range. Workers only see their own earning after the final amount is fixed.</p>
+                <button class="button primary large" type="submit">Create order</button>
+            </div>
+        </form>
+    </div>
+</section>
+{% endblock %}
