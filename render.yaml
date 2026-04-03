@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: assignment-web
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true
+      - key: PAYMENT_PROVIDER
+        value: demo
+      - key: APP_TIMEZONE
+        value: Asia/Calcutta
+      - key: DATABASE_PATH
+        value: /var/data/assignment_hub.db
+      - key: OWNER_USERNAME
+        value: owner
+      - key: OWNER_PASSWORD
+        sync: false
+    disks:
+      - name: assignment-web-data
+        mountPath: /var/data
+        sizeGB: 1
