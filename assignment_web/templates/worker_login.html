@@ -27,10 +27,12 @@
                 <button class="button primary" type="submit">Login to worker dashboard</button>
             </form>
 
+            {% if show_demo_credentials %}
             <div class="demo-credentials">
                 <strong>Demo worker</strong>
                 <p><code>{{ worker_demo_username }}</code> / <code>{{ worker_demo_password }}</code></p>
             </div>
+            {% endif %}
         </div>
 
         <div class="panel auth-panel wide">
