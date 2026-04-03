@@ -8,6 +8,16 @@
         <p class="eyebrow">Worker-only interface</p>
         <h1>Assignment delivery dashboard</h1>
         <p class="hero-text">Claim paid jobs, update status, keep students informed, and track released payouts.</p>
+        {% if push_enabled %}
+        <button
+            class="button ghost small push-enable"
+            type="button"
+            data-audience="WORKER"
+            data-vapid-key="{{ vapid_public_key }}"
+        >
+            Enable browser alerts
+        </button>
+        {% endif %}
     </div>
     <div class="stat-row compact">
         <article class="stat-card">
