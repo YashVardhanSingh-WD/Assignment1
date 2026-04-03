@@ -26,6 +26,7 @@
                 </label>
                 <button class="button primary" type="submit">Login to worker dashboard</button>
             </form>
+            <a class="text-link" href="{{ url_for('worker_reset_password') }}">Forgot password? Reset it with a verification code</a>
 
             {% if show_demo_credentials %}
             <div class="demo-credentials">
@@ -48,6 +49,10 @@
                 <label class="field">
                     <span>Username</span>
                     <input type="text" name="username" placeholder="neha.writer" required>
+                </label>
+                <label class="field">
+                    <span>Email</span>
+                    <input type="email" name="email" placeholder="worker@example.com" required>
                 </label>
                 <label class="field">
                     <span>WhatsApp number</span>
