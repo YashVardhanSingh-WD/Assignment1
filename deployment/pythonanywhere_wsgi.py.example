@@ -1,0 +1,16 @@
+import os
+import sys
+
+project_home = "/home/YOUR_USERNAME/assignment-web"
+if project_home not in sys.path:
+    sys.path.insert(0, project_home)
+
+os.environ["SECRET_KEY"] = "change-this-before-production"
+os.environ["OWNER_USERNAME"] = "owner"
+os.environ["OWNER_PASSWORD"] = "change-this-too"
+os.environ["PAYMENT_PROVIDER"] = "demo"
+
+# Optional if you want the SQLite DB outside the repo folder:
+# os.environ["DATABASE_PATH"] = "/home/YOUR_USERNAME/assignment-web-data/assignment_hub.db"
+
+from app import app as application
