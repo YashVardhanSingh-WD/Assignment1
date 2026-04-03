@@ -2,6 +2,7 @@ document.addEventListener("DOMContentLoaded", () => {
     initializeThemeToggle();
     initializeAssignmentForm();
     initializePaymentFlow();
+    initializePushNotifications();
 });
 
 function initializeThemeToggle() {
@@ -157,4 +158,72 @@ function openRazorpayCheckout(payload, publicId) {
         if (feedback) feedback.textContent = message;
     });
     razorpay.open();
+}
+
+async function initializePushNotifications() {
+    const buttons = Array.from(document.querySelectorAll(".push-enable"));
+    if (!buttons.length || !("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
+        return;
+    }
+
+    for (const button of buttons) {
+        button.addEventListener("click", async () => {
+            const vapidKey = button.dataset.vapidKey;
+            if (!vapidKey) {
+                button.textContent = "Push not configured";
+                button.disabled = true;
+                return;
+            }
+
+            try {
+                const permission = await Notification.requestPermission();
+                if (permission !== "granted") {
+                    button.textContent = "Browser alerts blocked";
+                    return;
+                }
+
+                const registration = await navigator.serviceWorker.register("/service-worker.js");
+                let subscription = await registration.pushManager.getSubscription();
+                if (!subscription) {
+                    subscription = await registration.pushManager.subscribe({
+                        userVisibleOnly: true,
+                        applicationServerKey: urlBase64ToUint8Array(vapidKey),
+                    });
+                }
+
+                const response = await fetch("/push/subscribe", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        audience_type: button.dataset.audience,
+                        public_id: button.dataset.publicId,
+                        email: button.dataset.email,
+                        subscription: subscription.toJSON(),
+                    }),
+                });
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data.error || "Could not enable browser alerts.");
+                }
+
+                button.textContent = "Browser alerts enabled";
+                button.disabled = true;
+            } catch (error) {
+                button.textContent = error.message;
+            }
+        });
+    }
+}
+
+function urlBase64ToUint8Array(base64String) {
+    const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+    const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+
+    for (let i = 0; i < rawData.length; ++i) {
+        outputArray[i] = rawData.charCodeAt(i);
+    }
+
+    return outputArray;
 }
