@@ -2,6 +2,7 @@ from functools import wraps
 import hashlib
 import hmac
 import os
+import secrets
 
 from flask import redirect, request, session, url_for
 
@@ -22,6 +23,21 @@ def verify_password(stored_value: str, password: str) -> bool:
     expected = bytes.fromhex(digest_hex)
     candidate = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 390_000)
     return hmac.compare_digest(expected, candidate)
+
+
+def generate_reset_code(length: int = 6) -> str:
+    digits = "0123456789"
+    return "".join(secrets.choice(digits) for _ in range(length))
+
+
+def hash_reset_code(secret_key: str, worker_id: int, code: str) -> str:
+    message = f"{worker_id}:{code}".encode("utf-8")
+    return hmac.new(secret_key.encode("utf-8"), message, hashlib.sha256).hexdigest()
+
+
+def verify_reset_code(secret_key: str, worker_id: int, code: str, stored_hash: str) -> bool:
+    candidate = hash_reset_code(secret_key, worker_id, code)
+    return hmac.compare_digest(candidate, stored_hash)
 
 
 def worker_required(view_func):
