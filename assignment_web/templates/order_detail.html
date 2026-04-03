@@ -160,6 +160,49 @@
 
 <section class="section split">
     <article class="panel">
+        <div class="panel-header">
+            <div>
+                <p class="panel-label">Notifications</p>
+                <h3>Important updates for this order</h3>
+            </div>
+            <span class="status-chip muted">{{ student_notifications|length }} recent</span>
+        </div>
+        <div class="feed notification-feed">
+            {% for notification in student_notifications %}
+            <article class="feed-item notification-item">
+                <div class="feed-meta">
+                    <strong>{{ notification.title }}</strong>
+                    <span>{{ notification.created_at|pretty_datetime }}</span>
+                </div>
+                <p>{{ notification.body }}</p>
+                <span class="status-chip {{ notification.tone }}">{{ notification.tone|title }}</span>
+            </article>
+            {% else %}
+            <p class="empty-state">Important order notifications will appear here as the quote, payment, worker updates, and approval steps move forward.</p>
+            {% endfor %}
+        </div>
+    </article>
+
+    <article class="panel">
+        <p class="panel-label">Order timeline</p>
+        <div class="feed timeline-feed">
+            {% for item in history %}
+            <article class="feed-item">
+                <div class="feed-meta">
+                    <strong>{{ status_labels.get(item.status, item.status) }}</strong>
+                    <span>{{ item.actor_role|title }} · {{ item.created_at|pretty_datetime }}</span>
+                </div>
+                <p>{{ item.note }}</p>
+            </article>
+            {% else %}
+            <p class="empty-state">The status timeline will appear here as updates are recorded.</p>
+            {% endfor %}
+        </div>
+    </article>
+</section>
+
+<section class="section">
+    <article class="panel">
         <p class="panel-label">Message thread</p>
         <form method="post" action="{{ url_for('post_student_message', public_id=assignment.public_id) }}" class="stack">
             <label class="field">
@@ -188,23 +231,6 @@
             </article>
             {% else %}
             <p class="empty-state">No messages yet. Start the thread if you need to add more context.</p>
-            {% endfor %}
-        </div>
-    </article>
-
-    <article class="panel">
-        <p class="panel-label">Order timeline</p>
-        <div class="feed timeline-feed">
-            {% for item in history %}
-            <article class="feed-item">
-                <div class="feed-meta">
-                    <strong>{{ status_labels.get(item.status, item.status) }}</strong>
-                    <span>{{ item.actor_role|title }} · {{ item.created_at|pretty_datetime }}</span>
-                </div>
-                <p>{{ item.note }}</p>
-            </article>
-            {% else %}
-            <p class="empty-state">The status timeline will appear here as updates are recorded.</p>
             {% endfor %}
         </div>
     </article>
