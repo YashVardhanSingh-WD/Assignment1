@@ -200,6 +200,20 @@ def register_routes(app: Flask) -> None:
             full_name,
             f"Initial brief: {requirements}",
         )
+        assignment = _get_assignment_bundle(public_id)
+        if assignment:
+            _notify_student(
+                assignment,
+                "Order received",
+                "Your assignment request is saved. The owner will review your budget range and confirm the final payable amount.",
+                tone="accent",
+            )
+            _notify_owner(
+                "New assignment waiting for quote review",
+                f"{assignment['student_name']} submitted {assignment['title']} with a budget range of {_currency_value(assignment['budget_min'])} to {_currency_value(assignment['budget_max'])}.",
+                assignment_id=assignment["id"],
+                tone="warning",
+            )
         db.commit()
         flash("Assignment request created. The owner will review the budget range and set the final payable amount.", "success")
         return redirect(url_for("order_detail", public_id=public_id))
@@ -233,6 +247,12 @@ def register_routes(app: Flask) -> None:
             "SELECT amount, status, released_at FROM payouts WHERE assignment_id = ?",
             (assignment["id"],),
         ).fetchone()
+        student_notifications = _fetch_notifications(
+            "STUDENT",
+            assignment_id=assignment["id"],
+            student_id=assignment["student_id"],
+            limit=8,
+        )
         gateway = get_payment_gateway(app)
         return render_template(
             "order_detail.html",
@@ -240,6 +260,7 @@ def register_routes(app: Flask) -> None:
             messages=messages,
             history=history,
             payout=payout,
+            student_notifications=student_notifications,
             payment_provider=gateway.name,
             status_labels=STATUS_LABELS,
             status_tone=status_tone,
@@ -267,6 +288,21 @@ def register_routes(app: Flask) -> None:
 
         _append_message(assignment["id"], "student", sender_name, body)
         _append_status(assignment["id"], assignment["status"], "Student shared an update or clarification.", "student")
+        if assignment["assigned_worker_id"]:
+            _notify_worker(
+                assignment["assigned_worker_id"],
+                "Student sent a new message",
+                f"{assignment['student_name']} added a clarification on {assignment['public_id']}.",
+                assignment_id=assignment["id"],
+                tone="accent",
+            )
+        else:
+            _notify_owner(
+                "Student added more details",
+                f"{assignment['student_name']} posted a clarification for {assignment['public_id']} before a worker was assigned.",
+                assignment_id=assignment["id"],
+                tone="muted",
+            )
         get_db().commit()
         flash("Message sent to the worker workspace.", "success")
         return redirect(url_for("order_detail", public_id=public_id))
@@ -293,8 +329,31 @@ def register_routes(app: Flask) -> None:
             (timestamp, timestamp, assignment["id"]),
         )
         _append_status(assignment["id"], "APPROVED", "Student approved the submitted work.", "student")
+        _notify_student(
+            assignment,
+            "Order closed",
+            "You approved the finished assignment. The order is now closed.",
+            tone="success",
+        )
+        payout = None
         if assignment["assigned_worker_id"]:
-            _release_payout(assignment)
+            payout = _release_payout(assignment)
+            _notify_worker(
+                assignment["assigned_worker_id"],
+                "Student approved your work",
+                f"{assignment['public_id']} was approved. Payout is {payout['status'].lower()} for {_currency_value(payout['amount'])}.",
+                assignment_id=assignment["id"],
+                tone="success" if payout["status"] == "RELEASED" else "warning",
+            )
+        owner_note = f"{assignment['public_id']} was approved by the student."
+        if payout:
+            owner_note = f"{owner_note} Worker payout is {payout['status'].lower()}."
+        _notify_owner(
+            "Assignment approved by student",
+            owner_note,
+            assignment_id=assignment["id"],
+            tone="success",
+        )
         db.commit()
         flash("Assignment approved. Worker payout has been queued or released.", "success")
         return redirect(url_for("order_detail", public_id=public_id))
@@ -461,6 +520,19 @@ def register_routes(app: Flask) -> None:
                 timestamp,
             ),
         )
+        worker_id = db.execute("SELECT id FROM workers WHERE username = ?", (username,)).fetchone()["id"]
+        _notify_worker(
+            worker_id,
+            "Registration submitted",
+            "Your worker account is created and now waiting for owner approval.",
+            tone="warning",
+        )
+        _notify_owner(
+            "New worker registration waiting",
+            f"{full_name} (@{username}) registered and is waiting for approval.",
+            worker_id=worker_id,
+            tone="warning",
+        )
         db.commit()
         flash("Worker registration submitted. The owner must approve it before you can log in.", "success")
         return redirect(url_for("worker_login"))
@@ -511,12 +583,20 @@ def register_routes(app: Flask) -> None:
             "mine": len(my_assignments),
             "earnings": sum(row["amount"] for row in payouts if row["status"] == "RELEASED"),
         }
+        worker_notifications, unread_notifications = _fetch_notifications_with_unread(
+            "WORKER",
+            worker_id=worker_id,
+            limit=8,
+            mark_read=True,
+        )
         return render_template(
             "worker_dashboard.html",
             available_assignments=available_assignments,
             my_assignments=my_assignments,
             payouts=payouts,
             stats=stats,
+            worker_notifications=worker_notifications,
+            worker_unread_notifications=unread_notifications,
             status_labels=STATUS_LABELS,
             status_tone=status_tone,
             service_lookup=_label_lookup(SERVICE_OPTIONS),
@@ -552,6 +632,28 @@ def register_routes(app: Flask) -> None:
             (session["worker_id"], timestamp, assignment_id),
         )
         _append_status(assignment_id, "ASSIGNED", f"{session['worker_name']} claimed the assignment.", "worker")
+        assignment_bundle = _get_assignment_bundle_by_id(assignment_id)
+        if assignment_bundle:
+            _notify_worker(
+                session["worker_id"],
+                "Assignment claimed",
+                f"You claimed {assignment_bundle['public_id']}. Start working and keep the student updated.",
+                assignment_id=assignment_id,
+                tone="accent",
+            )
+            _notify_student(
+                assignment_bundle,
+                "A worker picked up your order",
+                f"{session['worker_name']} claimed your assignment and can now start working on it.",
+                tone="accent",
+            )
+            _notify_owner(
+                "Assignment claimed by worker",
+                f"{session['worker_name']} claimed {assignment_bundle['public_id']}.",
+                assignment_id=assignment_id,
+                worker_id=session["worker_id"],
+                tone="muted",
+            )
         db.commit()
         flash("Assignment claimed successfully.", "success")
         return redirect(url_for("worker_dashboard"))
@@ -584,6 +686,36 @@ def register_routes(app: Flask) -> None:
         )
         note_text = note or f"Worker updated the assignment status to {STATUS_LABELS.get(new_status, new_status)}."
         _append_status(assignment_id, new_status, note_text, "worker")
+        assignment_bundle = _get_assignment_bundle_by_id(assignment_id)
+        if assignment_bundle:
+            if new_status == "COMPLETED":
+                _notify_student(
+                    assignment_bundle,
+                    "Assignment marked completed",
+                    "Your worker says the assignment is finished. Please review it and approve it if everything looks good.",
+                    tone="accent",
+                )
+                _notify_owner(
+                    "Assignment is waiting for student approval",
+                    f"{assignment_bundle['public_id']} was marked completed by {session['worker_name']}.",
+                    assignment_id=assignment_id,
+                    worker_id=session["worker_id"],
+                    tone="warning",
+                )
+            elif new_status == "IN_PROGRESS":
+                _notify_student(
+                    assignment_bundle,
+                    "Work is in progress",
+                    f"{session['worker_name']} updated {assignment_bundle['public_id']} to in progress.",
+                    tone="muted",
+                )
+            elif new_status == "ASSIGNED":
+                _notify_student(
+                    assignment_bundle,
+                    "Worker started the assignment",
+                    f"{session['worker_name']} confirmed the assignment is now underway.",
+                    tone="accent",
+                )
         db.commit()
         flash("Assignment status updated.", "success")
         return redirect(url_for("worker_dashboard"))
@@ -610,6 +742,14 @@ def register_routes(app: Flask) -> None:
 
         _append_message(assignment_id, "worker", session["worker_name"], body)
         _append_status(assignment_id, "IN_PROGRESS", "Worker sent a message or delivery note.", "worker")
+        assignment_bundle = _get_assignment_bundle_by_id(assignment_id)
+        if assignment_bundle:
+            _notify_student(
+                assignment_bundle,
+                "New message from worker",
+                f"{session['worker_name']} sent you a new update on {assignment_bundle['public_id']}.",
+                tone="accent",
+            )
         db.commit()
         flash("Message added to the order thread.", "success")
         return redirect(url_for("worker_dashboard"))
@@ -675,12 +815,19 @@ def register_routes(app: Flask) -> None:
             LIMIT 10
             """
         ).fetchall()
+        owner_notifications, owner_unread_notifications = _fetch_notifications_with_unread(
+            "OWNER",
+            limit=10,
+            mark_read=True,
+        )
         return render_template(
             "owner_dashboard.html",
             pending_workers=pending_workers,
             approved_workers=approved_workers,
             quote_pending_assignments=quote_pending_assignments,
             recent_assignments=recent_assignments,
+            owner_notifications=owner_notifications,
+            owner_unread_notifications=owner_unread_notifications,
             status_labels=STATUS_LABELS,
             status_tone=status_tone,
             worker_earning_amount=worker_payout_amount,
@@ -722,6 +869,12 @@ def register_routes(app: Flask) -> None:
         )
         quote_note = note or f"Final price confirmed at {_currency_value(final_price)} after workload review."
         _append_status(assignment["id"], "NEW", quote_note, "owner")
+        _notify_student(
+            assignment,
+            "Final quote is ready",
+            f"The final agreed amount for {assignment['public_id']} is {_currency_value(final_price)}. Payment is now waiting from your side.",
+            tone="warning",
+        )
         db.commit()
         flash("Final price saved. The student can now complete payment.", "success")
         return redirect(url_for("owner_dashboard"))
@@ -746,6 +899,13 @@ def register_routes(app: Flask) -> None:
             """,
             (timestamp, session.get("owner_name", "owner"), worker_id),
         )
+        _notify_worker(
+            worker_id,
+            "Registration approved",
+            "The owner approved your worker account. You can now log in and start taking assignments.",
+            tone="success",
+        )
+        _notify_worker_about_open_queue(worker_id)
         db.commit()
         flash("Worker approved successfully.", "success")
         return redirect(url_for("owner_dashboard"))
@@ -769,6 +929,12 @@ def register_routes(app: Flask) -> None:
             """,
             (session.get("owner_name", "owner"), worker_id),
         )
+        _notify_worker(
+            worker_id,
+            "Registration was not approved",
+            "The owner rejected this worker registration. Contact the owner if you want to review the details.",
+            tone="danger",
+        )
         db.commit()
         flash("Worker registration was rejected.", "success")
         return redirect(url_for("owner_dashboard"))
@@ -791,6 +957,26 @@ def _get_assignment_bundle(public_id: str):
         WHERE a.public_id = ?
         """,
         (public_id.upper(),),
+    ).fetchone()
+
+
+def _get_assignment_bundle_by_id(assignment_id: int):
+    db = get_db()
+    return db.execute(
+        """
+        SELECT
+            a.*,
+            s.full_name AS student_name,
+            s.email,
+            s.whatsapp,
+            w.full_name AS worker_name,
+            w.whatsapp AS worker_whatsapp
+        FROM assignments a
+        JOIN students s ON s.id = a.student_id
+        LEFT JOIN workers w ON w.id = a.assigned_worker_id
+        WHERE a.id = ?
+        """,
+        (assignment_id,),
     ).fetchone()
 
 
@@ -818,6 +1004,10 @@ def _append_message(assignment_id: int, sender_role: str, sender_name: str, body
 
 def _mark_assignment_paid(assignment_id: int, payment_reference: str) -> None:
     db = get_db()
+    assignment = _get_assignment_bundle_by_id(assignment_id)
+    if not assignment or assignment["payment_status"] == "PAID":
+        return
+
     timestamp = now_iso(current_app.config["APP_TIMEZONE"])
     db.execute(
         """
@@ -828,16 +1018,39 @@ def _mark_assignment_paid(assignment_id: int, payment_reference: str) -> None:
         (payment_reference, timestamp, assignment_id),
     )
     _append_status(assignment_id, "PAID", "Payment verified successfully.", "system")
+    assignment = _get_assignment_bundle_by_id(assignment_id)
+    if assignment:
+        _notify_student(
+            assignment,
+            "Payment received",
+            "Your payment is verified. The assignment is now visible to approved workers.",
+            tone="success",
+        )
+        _notify_owner(
+            "Assignment payment received",
+            f"{assignment['public_id']} has been paid and is now open for approved workers.",
+            assignment_id=assignment_id,
+            tone="success",
+        )
+        _notify_available_workers(assignment)
 
 
-def _release_payout(assignment) -> None:
+def _release_payout(assignment):
     db = get_db()
     payout_exists = db.execute(
         "SELECT id FROM payouts WHERE assignment_id = ?",
         (assignment["id"],),
     ).fetchone()
     if payout_exists:
-        return
+        payout = db.execute(
+            "SELECT amount, status, released_at FROM payouts WHERE assignment_id = ?",
+            (assignment["id"],),
+        ).fetchone()
+        return {
+            "amount": payout["amount"],
+            "status": payout["status"],
+            "released_at": payout["released_at"],
+        }
 
     timestamp = now_iso(current_app.config["APP_TIMEZONE"])
     amount = worker_payout_amount(assignment["final_price"], current_app.config["WORKER_SHARE"])
@@ -858,6 +1071,221 @@ def _release_payout(assignment) -> None:
             timestamp,
         ),
     )
+    return {
+        "amount": amount,
+        "status": status,
+        "released_at": released_at,
+    }
+
+
+def _create_notification(
+    *,
+    audience_type: str,
+    title: str,
+    body: str,
+    tone: str = "muted",
+    student_id: int | None = None,
+    worker_id: int | None = None,
+    assignment_id: int | None = None,
+    action_url: str | None = None,
+) -> None:
+    db = get_db()
+    db.execute(
+        """
+        INSERT INTO notifications (
+            audience_type, student_id, worker_id, assignment_id, title, body, tone, action_url, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            audience_type,
+            student_id,
+            worker_id,
+            assignment_id,
+            title,
+            body,
+            tone,
+            action_url,
+            now_iso(current_app.config["APP_TIMEZONE"]),
+        ),
+    )
+
+
+def _notify_student(assignment, title: str, body: str, tone: str = "muted") -> None:
+    _create_notification(
+        audience_type="STUDENT",
+        student_id=assignment["student_id"],
+        assignment_id=assignment["id"],
+        title=title,
+        body=body,
+        tone=tone,
+        action_url=url_for("order_detail", public_id=assignment["public_id"]),
+    )
+
+
+def _notify_worker(
+    worker_id: int,
+    title: str,
+    body: str,
+    assignment_id: int | None = None,
+    tone: str = "muted",
+) -> None:
+    _create_notification(
+        audience_type="WORKER",
+        worker_id=worker_id,
+        assignment_id=assignment_id,
+        title=title,
+        body=body,
+        tone=tone,
+        action_url=url_for("worker_dashboard"),
+    )
+
+
+def _notify_owner(
+    title: str,
+    body: str,
+    assignment_id: int | None = None,
+    worker_id: int | None = None,
+    tone: str = "muted",
+) -> None:
+    _create_notification(
+        audience_type="OWNER",
+        worker_id=worker_id,
+        assignment_id=assignment_id,
+        title=title,
+        body=body,
+        tone=tone,
+        action_url=url_for("owner_dashboard"),
+    )
+
+
+def _notify_available_workers(assignment) -> None:
+    db = get_db()
+    workers = db.execute(
+        """
+        SELECT id
+        FROM workers
+        WHERE is_active = 1 AND approval_status = 'APPROVED'
+        """
+    ).fetchall()
+    earning = worker_payout_amount(assignment["final_price"], current_app.config["WORKER_SHARE"])
+    for worker in workers:
+        _notify_worker(
+            worker["id"],
+            "New paid assignment is available",
+            f"{assignment['public_id']} is ready to claim. Your earning would be {_currency_value(earning)}.",
+            assignment_id=assignment["id"],
+            tone="accent",
+        )
+
+
+def _notify_worker_about_open_queue(worker_id: int) -> None:
+    db = get_db()
+    available_count = db.execute(
+        """
+        SELECT COUNT(*) AS total
+        FROM assignments
+        WHERE status = 'PAID' AND assigned_worker_id IS NULL
+        """
+    ).fetchone()["total"]
+    if not available_count:
+        return
+
+    _notify_worker(
+        worker_id,
+        "Paid assignments are waiting",
+        f"There {'is' if available_count == 1 else 'are'} {available_count} paid assignment{'s' if available_count != 1 else ''} ready to claim right now.",
+        tone="accent",
+    )
+
+
+def _fetch_notifications(
+    audience_type: str,
+    *,
+    student_id: int | None = None,
+    worker_id: int | None = None,
+    assignment_id: int | None = None,
+    limit: int = 8,
+):
+    db = get_db()
+    clauses = ["audience_type = ?"]
+    params: list[object] = [audience_type]
+    if student_id is not None:
+        clauses.append("student_id = ?")
+        params.append(student_id)
+    if worker_id is not None:
+        clauses.append("worker_id = ?")
+        params.append(worker_id)
+    if assignment_id is not None:
+        clauses.append("assignment_id = ?")
+        params.append(assignment_id)
+    params.append(limit)
+    return db.execute(
+        f"""
+        SELECT id, title, body, tone, action_url, is_read, created_at
+        FROM notifications
+        WHERE {' AND '.join(clauses)}
+        ORDER BY id DESC
+        LIMIT ?
+        """,
+        tuple(params),
+    ).fetchall()
+
+
+def _fetch_notifications_with_unread(
+    audience_type: str,
+    *,
+    student_id: int | None = None,
+    worker_id: int | None = None,
+    assignment_id: int | None = None,
+    limit: int = 8,
+    mark_read: bool = False,
+):
+    db = get_db()
+    clauses = ["audience_type = ?"]
+    params: list[object] = [audience_type]
+    if student_id is not None:
+        clauses.append("student_id = ?")
+        params.append(student_id)
+    if worker_id is not None:
+        clauses.append("worker_id = ?")
+        params.append(worker_id)
+    if assignment_id is not None:
+        clauses.append("assignment_id = ?")
+        params.append(assignment_id)
+
+    where_clause = " AND ".join(clauses)
+    notifications = db.execute(
+        f"""
+        SELECT id, title, body, tone, action_url, is_read, created_at
+        FROM notifications
+        WHERE {where_clause}
+        ORDER BY id DESC
+        LIMIT ?
+        """,
+        tuple(params + [limit]),
+    ).fetchall()
+    unread = db.execute(
+        f"""
+        SELECT COUNT(*) AS total
+        FROM notifications
+        WHERE {where_clause} AND is_read = 0
+        """,
+        tuple(params),
+    ).fetchone()["total"]
+
+    if mark_read:
+        db.execute(
+            f"""
+            UPDATE notifications
+            SET is_read = 1, read_at = ?
+            WHERE {where_clause} AND is_read = 0
+            """,
+            (now_iso(current_app.config["APP_TIMEZONE"]), *params),
+        )
+        db.commit()
+
+    return notifications, unread
 
 
 def _label_lookup(options) -> dict:
