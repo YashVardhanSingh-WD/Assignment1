@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+
+{% block title %}Worker Dashboard | {{ app_name }}{% endblock %}
+
+{% block content %}
+<section class="order-hero">
+    <div>
+        <p class="eyebrow">Worker-only interface</p>
+        <h1>Assignment delivery dashboard</h1>
+        <p class="hero-text">Claim paid jobs, update status, keep students informed, and track released payouts.</p>
+    </div>
+    <div class="stat-row compact">
+        <article class="stat-card">
+            <strong>{{ stats.available }}</strong>
+            <span>available paid jobs</span>
+        </article>
+        <article class="stat-card">
+            <strong>{{ stats.mine }}</strong>
+            <span>jobs assigned to you</span>
+        </article>
+        <article class="stat-card">
+            <strong>{{ stats.earnings|currency_inr }}</strong>
+            <span>released payouts</span>
+        </article>
+    </div>
+</section>
+
+<section class="section split">
+    <article class="panel">
+        <p class="panel-label">Available assignments</p>
+        <div class="feed cards-feed">
+            {% for assignment in available_assignments %}
+            <article class="job-card">
+                <div class="job-topline">
+                    <div>
+                        <h3>{{ assignment.title }}</h3>
+                        <p>{{ service_lookup.get(assignment.service_type, assignment.service_type) }} · {{ assignment.page_count }} pages/slides</p>
+                    </div>
+                    <span class="status-chip accent">{{ worker_earning_amount(assignment.final_price, worker_share)|currency_inr }}</span>
+                </div>
+                <div class="job-details">
+                    <span>Deadline: {{ assignment.deadline|pretty_datetime }}</span>
+                    <span>Mode: {{ submission_lookup.get(assignment.submission_mode, assignment.submission_mode) }}</span>
+                    <span>Your earning: {{ worker_earning_amount(assignment.final_price, worker_share)|currency_inr }}</span>
+                </div>
+                <p>{{ assignment.requirements }}</p>
+                <form method="post" action="{{ url_for('claim_assignment', assignment_id=assignment.id) }}">
+                    <button class="button primary" type="submit">Claim assignment</button>
+                </form>
+            </article>
+            {% else %}
+            <p class="empty-state">No paid assignments are waiting right now.</p>
+            {% endfor %}
+        </div>
+    </article>
+
+    <article class="panel">
+        <p class="panel-label">Payouts</p>
+        <div class="feed cards-feed">
+            {% for payout in payouts %}
+            <article class="feed-item">
+                <div class="feed-meta">
+                    <strong>{{ payout.public_id }}</strong>
+                    <span>{{ payout.status }}{% if payout.released_at %} · {{ payout.released_at|pretty_datetime }}{% endif %}</span>
+                </div>
+                <p>{{ payout.title }}</p>
+                <strong>{{ payout.amount|currency_inr }}</strong>
+            </article>
+            {% else %}
+            <p class="empty-state">Released or queued worker payouts will show up here.</p>
+            {% endfor %}
+        </div>
+    </article>
+</section>
+
+<section class="section">
+    <div class="section-heading">
+        <p class="eyebrow">My assignments</p>
+        <h2>Update status and keep the student informed.</h2>
+    </div>
+    <div class="feed cards-feed">
+        {% for assignment in my_assignments %}
+        <article class="job-card detailed">
+            <div class="job-topline">
+                <div>
+                    <h3>{{ assignment.title }}</h3>
+                    <p>{{ assignment.student_name }} · {{ assignment.email }} · {{ assignment.whatsapp }}</p>
+                </div>
+                <span class="status-chip {{ status_tone(assignment.status) }}">{{ status_labels.get(assignment.status, assignment.status) }}</span>
+            </div>
+            <div class="job-details">
+                <span>Order: {{ assignment.public_id }}</span>
+                <span>Deadline: {{ assignment.deadline|pretty_datetime }}</span>
+                <span>Your earning: {{ worker_earning_amount(assignment.final_price, worker_share)|currency_inr }}</span>
+            </div>
+            <p>{{ assignment.requirements }}</p>
+
+            {% if assignment.submission_mode == "HANDWRITTEN" %}
+            <div class="inline-note">
+                Deliver to {{ assignment.hostel_name }}, room {{ assignment.room_number }} at {{ assignment.delivery_address }}.
+            </div>
+            {% endif %}
+
+            <div class="worker-actions-grid">
+                <form method="post" action="{{ url_for('update_worker_status', assignment_id=assignment.id) }}" class="stack panel inner-panel">
+                    <p class="panel-label">Update status</p>
+                    <label class="field">
+                        <span>Status</span>
+                        <select name="status" required>
+                            <option value="ASSIGNED" {% if assignment.status == "ASSIGNED" %}selected{% endif %}>Claimed</option>
+                            <option value="IN_PROGRESS" {% if assignment.status == "IN_PROGRESS" %}selected{% endif %}>In progress</option>
+                            <option value="COMPLETED" {% if assignment.status == "COMPLETED" %}selected{% endif %}>Completed</option>
+                        </select>
+                    </label>
+                    <label class="field">
+                        <span>Progress note</span>
+                        <textarea name="note" rows="3" placeholder="What changed for the student?"></textarea>
+                    </label>
+                    <button class="button ghost" type="submit">Save status</button>
+                </form>
+
+                <form method="post" action="{{ url_for('post_worker_message', assignment_id=assignment.id) }}" class="stack panel inner-panel">
+                    <p class="panel-label">Send message</p>
+                    <label class="field">
+                        <span>Message</span>
+                        <textarea name="body" rows="3" placeholder="Share a clarification, delivery note, or completion update." required></textarea>
+                    </label>
+                    <button class="button ghost" type="submit">Post to student thread</button>
+                </form>
+            </div>
+        </article>
+        {% else %}
+        <p class="empty-state">Claim an available assignment to start working.</p>
+        {% endfor %}
+    </div>
+</section>
+{% endblock %}
