@@ -22,7 +22,37 @@
             <strong>{{ recent_assignments|length }}</strong>
             <span>recent assignments</span>
         </article>
+        <article class="stat-card">
+            <strong>{{ owner_unread_notifications }}</strong>
+            <span>new alerts since last visit</span>
+        </article>
     </div>
+</section>
+
+<section class="section">
+    <article class="panel">
+        <div class="panel-header">
+            <div>
+                <p class="panel-label">Notification center</p>
+                <h3>Owner alerts across the platform</h3>
+            </div>
+            <span class="status-chip accent">{{ owner_unread_notifications }} new</span>
+        </div>
+        <div class="feed notification-feed">
+            {% for notification in owner_notifications %}
+            <article class="feed-item notification-item">
+                <div class="feed-meta">
+                    <strong>{{ notification.title }}</strong>
+                    <span>{{ notification.created_at|pretty_datetime }}</span>
+                </div>
+                <p>{{ notification.body }}</p>
+                <span class="status-chip {{ notification.tone }}">{{ notification.tone|title }}</span>
+            </article>
+            {% else %}
+            <p class="empty-state">Owner alerts will appear here for new worker registrations, quote requests, completed jobs, and payout-related updates.</p>
+            {% endfor %}
+        </div>
+    </article>
 </section>
 
 <section class="section split">
