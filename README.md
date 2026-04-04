@@ -73,6 +73,7 @@ Important:
 
 - The app now supports `DATABASE_PATH`, so Render can store SQLite on a mounted disk.
 - `render.yaml` mounts a persistent disk at `/var/data` and points the database to `/var/data/assignment_hub.db`.
+- On the first persistent deploy, the app copies the existing `/tmp/assignment_hub.db` into `/var/data/assignment_hub.db` if the mounted database file does not exist yet.
 
 Basic Render flow:
 
