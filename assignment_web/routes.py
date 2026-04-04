@@ -1095,11 +1095,49 @@ def register_routes(app: Flask) -> None:
             LIMIT 12
             """
         ).fetchall()
+        recent_delivery_logs = db.execute(
+            """
+            SELECT audience_type, channel, recipient, provider, status, error_message, created_at
+            FROM notification_deliveries
+            ORDER BY created_at DESC, id DESC
+            LIMIT 12
+            """
+        ).fetchall()
         owner_notifications, owner_unread_notifications = _fetch_notifications_with_unread(
             "OWNER",
             limit=10,
             mark_read=True,
         )
+        notification_channels = [
+            {
+                "name": "email",
+                "label": "Email",
+                "configured": channel_configured("email"),
+                "description": "SMTP sends notifications to student and worker email addresses.",
+                "target": app.config.get("OWNER_ALERT_EMAIL", ""),
+            },
+            {
+                "name": "sms",
+                "label": "SMS",
+                "configured": channel_configured("sms"),
+                "description": "Twilio SMS sends order updates and verification codes to phone numbers.",
+                "target": app.config.get("OWNER_ALERT_PHONE", ""),
+            },
+            {
+                "name": "whatsapp",
+                "label": "WhatsApp",
+                "configured": channel_configured("whatsapp"),
+                "description": "Twilio WhatsApp sends order updates to WhatsApp-enabled numbers.",
+                "target": app.config.get("OWNER_ALERT_WHATSAPP", ""),
+            },
+            {
+                "name": "push",
+                "label": "Browser push",
+                "configured": channel_configured("push"),
+                "description": "Users must enable browser alerts from their page or dashboard before push will work.",
+                "target": "",
+            },
+        ]
         return render_template(
             "owner_dashboard.html",
             pending_workers=pending_workers,
@@ -1107,14 +1145,18 @@ def register_routes(app: Flask) -> None:
             quote_pending_assignments=quote_pending_assignments,
             recent_assignments=recent_assignments,
             recent_clients=recent_clients,
+            recent_delivery_logs=recent_delivery_logs,
             owner_notifications=owner_notifications,
             owner_unread_notifications=owner_unread_notifications,
+            notification_channels=notification_channels,
             status_labels=STATUS_LABELS,
             status_tone=status_tone,
             worker_earning_amount=worker_payout_amount,
             owner_commission_amount=owner_commission_amount,
             worker_share=app.config["WORKER_SHARE"],
             service_lookup=_label_lookup(SERVICE_OPTIONS),
+            database_path=app.config["DATABASE"],
+            storage_is_persistent=app.config["DATABASE"].startswith("/var/data/"),
         )
 
     @app.route("/owner/assignments/<public_id>/quote", methods=["POST"])
