@@ -1,6 +1,7 @@
 from datetime import datetime
 from pathlib import Path
 import os
+import shutil
 from zoneinfo import ZoneInfo
 
 from flask import Flask
@@ -10,6 +11,28 @@ from .notifications import has_push_config
 from .payments import get_payment_gateway
 from .routes import register_routes
 from .services import get_timezone
+
+
+def _migrate_legacy_database_path(app: Flask) -> None:
+    target = Path(app.config["DATABASE"])
+    target.parent.mkdir(parents=True, exist_ok=True)
+
+    try:
+        if target.exists() and target.stat().st_size > 0:
+            return
+    except OSError:
+        return
+
+    for source in (Path("/tmp/assignment_hub.db"), Path(app.root_path).parent / "assignment_hub.db"):
+        if source == target:
+            continue
+        try:
+            if source.exists() and source.is_file() and source.stat().st_size > 0:
+                shutil.copy2(source, target)
+                app.logger.info("Migrated database from %s to %s", source, target)
+                return
+        except OSError as exc:
+            app.logger.warning("Could not migrate database from %s to %s: %s", source, target, exc)
 
 
 def create_app() -> Flask:
@@ -81,6 +104,7 @@ def create_app() -> Flask:
             "vapid_public_key": app.config["VAPID_PUBLIC_KEY"],
         }
 
+    _migrate_legacy_database_path(app)
     init_db_app(app)
     register_routes(app)
     return app
