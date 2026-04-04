@@ -43,6 +43,62 @@
     <article class="panel">
         <div class="panel-header">
             <div>
+                <p class="panel-label">Delivery health</p>
+                <h3>Live notification setup</h3>
+            </div>
+            <span class="status-chip {{ 'success' if storage_is_persistent else 'warning' }}">
+                {{ 'Persistent storage' if storage_is_persistent else 'Temporary storage' }}
+            </span>
+        </div>
+        <div class="feed cards-feed">
+            {% for channel in notification_channels %}
+            <article class="feed-item">
+                <div class="feed-meta">
+                    <strong>{{ channel.label }}</strong>
+                    <span class="status-chip {{ 'success' if channel.configured else 'warning' }}">
+                        {{ 'Configured' if channel.configured else 'Missing setup' }}
+                    </span>
+                </div>
+                <p>{{ channel.description }}</p>
+                {% if channel.target %}
+                <p>Owner alert target: {{ channel.target }}</p>
+                {% endif %}
+            </article>
+            {% endfor %}
+            <article class="feed-item">
+                <div class="feed-meta">
+                    <strong>Database path</strong>
+                    <span>{{ database_path }}</span>
+                </div>
+                <p>On the first persistent deploy, the app now copies the current SQLite file into the mounted disk before startup.</p>
+            </article>
+        </div>
+        <div class="feed notification-feed">
+            {% for delivery in recent_delivery_logs %}
+            <article class="feed-item notification-item">
+                <div class="feed-meta">
+                    <strong>{{ delivery.channel|upper }} · {{ delivery.status }}</strong>
+                    <span>{{ delivery.created_at|pretty_datetime }}</span>
+                </div>
+                <p>{{ delivery.audience_type|title }} via {{ delivery.provider }} to {{ delivery.recipient|truncate(70) }}</p>
+                {% if delivery.error_message %}
+                <p>{{ delivery.error_message|truncate(180) }}</p>
+                {% endif %}
+                <span class="status-chip {{ 'success' if delivery.status == 'SENT' else 'warning' if delivery.status == 'SKIPPED' else 'danger' }}">
+                    {{ delivery.status|title }}
+                </span>
+            </article>
+            {% else %}
+            <p class="empty-state">Notification attempts will appear here after the next order, quote, payment, or password-reset event.</p>
+            {% endfor %}
+        </div>
+    </article>
+</section>
+
+<section class="section">
+    <article class="panel">
+        <div class="panel-header">
+            <div>
                 <p class="panel-label">Notification center</p>
                 <h3>Owner alerts across the platform</h3>
             </div>
